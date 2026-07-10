@@ -24,13 +24,16 @@ As a developer, I want to declare rules such as "IF the task needs database acce
 Constraint: the manifest stays purely declarative; it never installs the commands or skills it references.
 
 **US-1.7 - Cover a multi-repo galaxy**
-As a developer maintaining a main repository that contains a galaxy of interdependent sub-repositories, I want the manifest to describe the sub-repos and their dependencies, so that the AI can navigate and orchestrate work across repos that depend on each other.
+As a developer maintaining a main repository that contains a galaxy of interdependent sub-repositories, I want the manifest to describe the sub-repos and their dependencies, so that when work spans several repos the AI acts accordingly on its own (for example, after modifying two repos, "create the MRs" produces one merge request per modified repo, each on the right code hosting instance).
 
 **US-1.8 - Keep the manifest out of the client's repo**
 As a developer on repositories where committing tooling files is not appropriate, I want to place the manifest in a parent directory of the repo, so that I get the full feature set without touching the client's codebase.
 
 **US-1.9 - Work outside git**
 As a developer, I want the manifest to work in any folder, not only git repositories, so that non-repo workspaces are covered too.
+
+**US-1.10 - Declare several code hosting instances with roles**
+As a developer whose repos live on two synchronized GitLab instances with different roles (merge requests and test pipelines on the first, deployment pipelines viewed and triggered on the second), I want to declare each instance and its role in the manifest, so that the AI opens merge requests on the right instance and checks or triggers deployments on the other without being told each time.
 
 ## Epic 2 - Query the context (the CLI)
 

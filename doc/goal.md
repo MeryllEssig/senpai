@@ -4,7 +4,7 @@
 
 AI Manager is a **project-scoped, declarative context layer for AI coding agents**.
 
-Each project carries a single manifest file (working name: `.ai-manager.jsonc`) that declares everything an AI agent needs to interact with the project's external ecosystem: ticket trackers, code hosting, environments and their logs, data stores, documentation locations, and rules mapping intents to skills.
+Each project carries a single manifest file, `.aimanager.jsonc`, that declares everything an AI agent needs to interact with the project's external ecosystem: ticket trackers, code hosting, environments and their logs, data stores, documentation locations, and rules mapping intents to skills.
 
 A companion CLI parses the manifest and returns to the agent **only what is needed** to answer the current user request. Generic skills (markdown instruction files an agent loads to learn a capability), installed once per machine rather than per project, cover using the CLI, setting up a manifest in a new project, and spotting automation opportunities.
 
@@ -18,7 +18,7 @@ AI agents start every session blind to the project's ecosystem. The developer ha
 
 1. **Project-first.** Context lives with the project, not in a central configuration. The manifest sits in the project folder, which does not need to be a git repository; when committing it to a client repo is not possible, it sits in a parent directory instead. Resolution walks up from the current directory, like `.git`.
 2. **Declarative, not executable.** The manifest describes connections (typed connectors: SSH, log files, DB, search engines, docs, and so on). Agents decide how to act on them. AI Manager installs nothing on its own.
-3. **Faithful to real project diversity.** Multiple trackers per project (ours plus the client's), tracker lifecycle (a project's tickets move to a general maintenance tracker after go-live), multi-repo galaxies (a main repository containing many interdependent sub-repositories) whose members must be orchestrated together, non-git folders.
+3. **Faithful to real project diversity.** Multiple trackers per project (ours plus the client's), tracker lifecycle (a project's tickets move to a general maintenance tracker after go-live), multi-repo galaxies (a main repository containing many interdependent sub-repositories) whose members must be orchestrated together, synchronized code hosting instances with distinct roles (merge requests and test pipelines on one, deployment pipelines on the other), non-git folders.
 4. **Agent-agnostic.** Usable from any agentic ecosystem: Claude Code, Codex, Gemini CLI, OpenCode, and whatever comes next. The lowest common denominator is a CLI on `$PATH` plus markdown instructions.
 5. **Token-efficient.** Skills use progressive discovery: a minimal entry point, deeper detail loaded only when needed. The CLI answers narrowly scoped queries instead of dumping the full manifest.
 6. **Didactic setup.** Setup and management skills interview the user, study the folder first, explain what they do and why (including practical caveats such as restarting the agent to pick up new environment variables), and speak the user's language.

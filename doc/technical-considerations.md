@@ -7,7 +7,7 @@ This document details the technical topics behind the user stories. Nothing here
 ### 1.1 Format and name
 
 - **JSONC** (JSON with comments): declarative, diff-friendly, and commentable so the file can carry its own description and per-entry explanations.
-- Working file name: `.ai-manager.jsonc` (final name to be decided, see notes).
+- File name: `.aimanager.jsonc` (decided).
 - A top-level `version` field from day one, so the schema can evolve without breaking existing manifests.
 - A published JSON Schema for editor completion and CLI validation.
 
@@ -67,9 +67,45 @@ Manifest support:
 
 - One manifest at the galaxy root describes the members and their `depends_on` edges. `role` is a free-form hint for the agent, not an enum the CLI interprets.
 - The CLI can then answer questions like "which repos does front_billing depend on" or "list the members", giving the agent enough structure to orchestrate cross-repo work (coordinated changes, dependency-aware navigation).
-- Open questions: whether sub-repos may also carry their own manifest and how the two compose, and how far "orchestration" should go beyond providing the dependency graph (see notes).
+- **Orchestration model (decided).** AI Manager provides declared facts; the agent derives the actions. The manifest carries enough structure (members, dependencies, hosting instances and their roles, trackers) for the agent to understand by itself what a cross-repo request implies. Example: the user modified two repos of the galaxy and asks to "create the MRs"; the agent creates one merge request per modified repo, each on the right instance (see 1.5). No orchestration engine, no scripted actions.
+- Open question: whether sub-repos may also carry their own manifest and how the two compose (see notes #3).
 
-### 1.5 Data-source connectors
+### 1.5 Code hosting: synchronized instances with roles
+
+A repo is not always hosted in one place. Real case: two synchronized GitLab instances, where merge requests are opened and test pipelines run on the first, while deployment pipelines are viewed and triggered on the second. The agent must know which instance serves which operation.
+
+```jsonc
+{
+  "code_hosting": {
+    "instances": {
+      "dev": {
+        "platform": "gitlab",
+        "url": "https://gitlab.agency.example",
+        // The agent picks the instance by role.
+        "roles": ["merge_requests", "test_pipelines"]
+      },
+      "ops": {
+        "platform": "gitlab",
+        "url": "https://gitlab.client.example",
+        "roles": ["deployment_pipelines"]
+      }
+    }
+  },
+  "repos": {
+    "api_billing": {
+      "path": "www/api_billing",
+      // Instance id -> repo path on that instance (mirrors can differ in namespace).
+      "hosting": { "dev": "acme/api-billing", "ops": "client-mirror/api-billing" }
+    }
+  }
+}
+```
+
+- `instances` declares each hosting endpoint once, with `roles` stating which operations belong to it (open merge requests, watch test pipelines, view and trigger deployment pipelines).
+- Each repo maps instance ids to its path on that instance.
+- With roles declared, "create the MR" routes to `dev` and "trigger the deployment" routes to `ops`, without any per-request instruction. A single-instance project declares one instance holding every role.
+
+### 1.6 Data-source connectors
 
 Connectors are **typed and declarative**: the manifest states what exists and how to reach it; it never embeds arbitrary shell commands. The agent (guided by the usage skill) decides what to run.
 
@@ -83,17 +119,17 @@ Candidate connector types for v1, driven by actual needs:
 | `elasticsearch` / `solr` / `redis` | endpoint, index/core/db, credential reference | query search or cache layers |
 | `docs` | local path or remote URL/repo | find the functional documentation |
 | `tracker` | see 1.3 | read and create tickets |
-| `code_hosting` | platform (GitLab, GitHub...), instance URL, repo path | merge/pull requests, CI |
+| `code_hosting` | see 1.5 | merge/pull requests, pipelines |
 
 Rationale for banning raw shell strings in the manifest: a manifest can live in a shared repo; a committed file that injects executable commands into an agent is a code-execution-by-commit vector. Typed connectors keep the trusted interpretation on the machine side.
 
-### 1.6 Secrets
+### 1.7 Secrets
 
 - The manifest **never contains secret values**. It references where credentials live, typically by environment variable name (`"password_env": "ACME_DB_PASSWORD"`).
 - The setup skill may ask the user for variable *names* and where they are defined, but must never read or echo their values.
 - Practical consequence to surface to users (didactics): agents inherit their environment at startup, so a newly defined variable requires restarting the agent.
 
-### 1.7 IF-THEN intent rules
+### 1.8 IF-THEN intent rules
 
 A declarative routing table from intents to approaches:
 

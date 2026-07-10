@@ -1,16 +1,16 @@
 # AI Manager - Open Questions and Notes
 
-Questions raised during design that are not yet answered, plus topics deliberately deferred. To be resolved with the project owner before or during implementation.
+Questions raised during design that are not yet answered, plus topics deliberately deferred. To be resolved with the project owner before or during implementation. Resolved entries stay in place with their decision, so numbering never shifts.
 
 ## Naming and format
 
-1. **Manifest file name.** Three variants were used while discussing: `.aimanager.json`, `aimanager.jsonc`, `ai-manager.json`. Proposal: `.ai-manager.jsonc` (matches the project name, JSONC extension announces comments; assumes a hidden file, which is question 2). To confirm.
-2. **Dotted (hidden) or visible file?** Hidden keeps repo roots clean; visible improves discoverability for teammates. Related: should the setup skill offer both?
+1. **Manifest file name.** RESOLVED (2026-07-10): `.aimanager.jsonc`.
+2. **Dotted (hidden) or visible file?** RESOLVED (2026-07-10): hidden dotted file, implied by the `.aimanager.jsonc` decision.
 
 ## Manifest semantics
 
 3. **Galaxy composition.** The working assumption is nearest-wins (technical considerations 1.2). When a sub-repo has its own manifest and an outer galaxy manifest also exists, is nearest-wins enough, or should the nearer manifest merge with or explicitly `extends` the outer one? Galaxies may want "my own context plus the galaxy graph".
-4. **How far does orchestration go?** For interdependent repos, is providing the dependency graph and letting the agent navigate enough, or should AI Manager define orchestration actions (coordinated branches or merge requests across repos, dependency-ordered task running)? The declarative philosophy suggests graph-only; the stated ambition ("orchestrate these projects") may require more.
+4. **How far does orchestration go?** RESOLVED (2026-07-10): no orchestration engine, no scripted actions. The manifest declares enough facts (galaxy members, dependencies, code hosting instances and their roles, trackers) for the agent to derive cross-repo actions by itself, such as creating one merge request per modified repo on the right instance. See technical considerations 1.4 and 1.5.
 5. **Bare ticket numbers with several trackers.** "#1234" is ambiguous when a project declares our Redmine and the client's Jira. Options: try sources in declared order, ask the user, or per-source ID patterns (Jira keys like `ACME-123` are self-disambiguating; two Redmines are not).
 6. **Write-target granularity.** Per-category routing (bug to the client's Jira, internal chore to our Redmine) is deferred in the technical considerations (1.3). Does any current real project need it from day one?
 7. **Local overrides.** Is a gitignored `.ai-manager.local.jsonc` overlay (personal paths, personal preferences) needed, or is the parent-directory placement already covering every private case? Deferred until a real need appears.
@@ -37,4 +37,4 @@ Questions raised during design that are not yet answered, plus topics deliberate
 
 17. **Team sharing.** If a colleague clones a repo with a committed manifest, credentials setup on their machine is undocumented territory (which variable names, which tools to install). The setup skill could offer a "join existing manifest" mode that reads the manifest and walks the newcomer through the machine-side setup.
 18. **Manifest evolution feedback loop.** When the usage skill hits a gap (a needed connector missing), should it proactively propose a manifest edit, or stay silent and let the user invoke setup? Proposal: propose, never apply silently.
-19. **Success criteria / v1 cut.** Which minimal feature set makes v1 useful on the first real project (suggestion: manifest + resolve/query/validate CLI + usage skill + setup skill, deferring automation discovery and galaxy orchestration beyond the graph)?
+19. **Success criteria / v1 cut.** RESOLVED (2026-07-10): no version-based prioritization. Tasks are separated but executed in their natural dependency order, so that nothing built early has to be undone later.
