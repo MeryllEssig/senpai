@@ -13,8 +13,8 @@ As a developer, I want the manifest to support comments (JSONC), so that I can d
 **US-1.3 - Declare several ticket trackers**
 As a developer working for clients, I want to declare several trackers on one project (our Redmine plus the client's Redmine, Jira, or Linear), so that the AI consults the correct system depending on the situation.
 
-**US-1.4 - Configure precisely where tickets go**
-As a developer whose projects change tracker over their lifecycle (a dedicated project space inside the tracker during the build, then a shared general-maintenance space after go-live), I want to configure precisely which tracker and project space is the current write target, so that tickets are always created in the right place.
+**US-1.4 - Route tracker actions by function across the lifecycle**
+As a developer whose trackers each play a different function (one authoritative for ticket details, one for booking time, one for hosting requests) and whose project changes tracker over its lifecycle (a dedicated project space during the build, then a shared general-maintenance space after go-live), I want each action routed to the right source by its declared role, with the lifecycle move being a one-line change to the relevant source's project space, so that reads, time bookings, and requests always land in the right place.
 
 **US-1.5 - Declare data sources**
 As a developer, I want to declare typed data-source connectors (SSH targets, preprod and prod log locations, databases, Elasticsearch, Solr, Redis, documentation locations in local or remote repositories), so that the AI knows how to fetch the data a request needs.
@@ -39,6 +39,19 @@ As a developer whose repos live on two synchronized GitLab instances with differ
 As a developer whose external commands authenticate in different ways, I want tracker sources and code hosting instances to optionally declare an auth mode (pre-configured CLI, environment variables referenced by name, interactive login), so that when I allow it the AI drives the login or re-login process itself, and when I omit it the AI assumes the CLI is pre-configured and authentication stays entirely in my hands.
 Constraint: secret values in the manifest are forbidden in every mode; only references (variable names) and mode names may appear.
 
+**US-1.12 - Declare local commands**
+As a developer, I want to declare local commands the project relies on (for example a `docker compose` invocation to read logs or act on a service), so that the AI can act on the project locally, not only on external tools, and discover how through the CLI.
+Constraint: local commands are the manifest's one executable surface; a committed block is subject to confirmation on first use, and self-authored commands belong in the gitignored local overlay.
+
+**US-1.13 - Onboard onto an existing manifest**
+As a developer joining a project that already carries a committed manifest, I want the agent to detect that I lack valid access and list the declared credential variable *names* missing from my environment (names only, never values), so that I can set them up myself without any secret being read.
+
+**US-1.14 - Keep personal settings out of the shared manifest**
+As a developer, I want a personal, gitignored overlay (`.aimanager.local.jsonc`) beside the committed manifest for my private paths, preferences, and personal auth or local-command overrides, so that my machine-specific choices never touch the file my teammates share.
+
+**US-1.15 - Mark a connector read-only**
+As a developer, I want to declare a structured `"access": "read-only"` marker on a connector (for example the prod database), so that the guardrail is checkable by tooling and the agent without relying on prose rules alone.
+
 ## Epic 2 - Query the context (the CLI)
 
 **US-2.1 - Scoped answers, not dumps**
@@ -48,7 +61,10 @@ As an AI agent, I want a CLI that parses the manifest and returns only the slice
 As a developer, I want the CLI to validate a manifest (syntax, schema, coherence), so that mistakes are caught when I edit it rather than mid-task.
 
 **US-2.3 - Resolve from anywhere in the project**
-As an AI agent invoked in any subdirectory, I want the CLI to find the manifest by walking up the directory tree, so that resolution works regardless of the current working directory.
+As an AI agent invoked in any subdirectory, I want the CLI to find the manifest by walking up the directory tree, so that resolution works regardless of the current working directory. When no manifest is found, I want the CLI to fail with an explanatory message rather than proceed silently.
+
+**US-2.4 - Report missing environment variables by name**
+As an AI agent, I want a CLI check (`doctor`) that lists the declared credential-reference variable names absent from the current environment (names only, never values), so that when I hit an authentication dead-end I can stop and tell the user exactly which variables to define.
 
 ## Epic 3 - Use the context (usage skills)
 

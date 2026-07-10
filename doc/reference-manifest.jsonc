@@ -7,15 +7,18 @@
 //
 //   - doc/goal.md                     what AI Manager is and is not
 //   - doc/user-stories.md             who needs what and why
-//   - doc/technical-considerations.md field shapes (sections 1.1 to 1.8)
-//   - doc/notes.md                    open questions and decisions
+//   - doc/technical-considerations.md field shapes (sections 1.1 to 1.10)
+//   - doc/notes.md                    cross-cutting process notes
 //
 // The project below is entirely fictional: an "acme" client, example hosts,
 // billing/catalog repos. No real client, company, URL, or credential appears.
 //
 // Ground rules the format guarantees:
-//   - Purely declarative. The manifest states what exists and how to reach
-//     it. It never embeds shell commands or anything executable.
+//   - Declarative, with one guarded exception. The manifest states what
+//     exists and how to reach it; the only executable surface is the typed
+//     "local_commands" category (guarded by the trust model, preferably kept
+//     in the personal overlay). No shell strings appear anywhere else,
+//     notably never in connector fields.
 //   - No secret values. Credentials are referenced by environment variable
 //     NAME only (for example "password_env"), never by value.
 //   - JSONC. Comments are encouraged: the file should explain itself to
@@ -24,7 +27,12 @@
 // Resolution: the CLI finds this file by walking up the directory tree from
 // the current working directory, exactly like .git discovery. It can sit at
 // the repo root, in a parent directory of a client repo that must not carry
-// tooling files, or in any plain folder (git is not required).
+// tooling files, or in any plain folder (git is not required). The nearest
+// manifest wins in full; manifests never merge or inherit from one another.
+//
+// Personal overlay: a gitignored .aimanager.local.jsonc placed beside this
+// file is deep-merged over it for private paths, preferences, and personal
+// auth or local_commands overrides (technical-considerations 1.9).
 // =============================================================================
 {
   // Manifest schema version, present from day one so the schema can evolve
@@ -42,17 +50,25 @@
     // Human-friendly display name.
     "label": "ACME Online Shop",
     // Free-text context for the AI. Keep it short and factual.
-    "context": "E-commerce platform built by the agency for the ACME client. Multi-repo galaxy: a root orchestrator repo plus interdependent sub-repos under www/. Two synchronized GitLab instances: merge requests and test pipelines on the agency instance, deployment pipelines on the client instance. Currently in the build phase, so new tickets go to the dedicated project space on the agency Redmine (see trackers.write_target).",
+    "context": "E-commerce platform built by the agency for the ACME client. Multi-repo galaxy: a root orchestrator repo plus interdependent sub-repos under www/. Two synchronized GitLab instances: merge requests and test pipelines on the agency instance, deployment pipelines on the client instance. Ticket details are authoritative on the client Jira; time is booked on the agency Redmine, currently on the dedicated build-phase project space (see trackers).",
     // Free-form technology hints for the agent, not an enum.
     "stack": ["php 8.3 / symfony 7", "vue 3", "mysql 8", "elasticsearch 8", "solr 9", "redis 7"]
   },
 
   // ---------------------------------------------------------------------------
-  // Trackers: multiple sources, one write target (technical-considerations 1.3)
+  // Trackers: several sources, routed by function (technical-considerations 1.3)
   // ---------------------------------------------------------------------------
-  // "sources" answers "where can tickets about this project live" (read side).
-  // "write_target" answers "where do new tickets go right now" (write side)
-  // and must point to a declared source.
+  // Routing is by FUNCTION, never by theme (no bug/chore split). Each source
+  // declares the "roles" it plays; the agent routes actions accordingly:
+  //   - "ticket_details": the authoritative source ("makes foi") for reading a
+  //     ticket's content. Usually the client's tracker.
+  //   - "time_logging": where time spent is booked. Usually our internal
+  //     tracker; may name a catch-all ticket for time with no dedicated ticket.
+  //   - "external_refs": a source that cross-links references to/from another.
+  //   - "hosting_requests": a tracker used to open/read hosting-provider
+  //     requests; does NOT make foi. (When the hosting team is in the same
+  //     company, this can be a separate project space on "internal" instead.)
+  // The role set is open (LLM-readable strings), not a closed enum.
   //
   // Optional "auth" on a source (same on code_hosting instances) declares how
   // the matching external command authenticates; commands differ, so the mode
@@ -71,25 +87,42 @@
     // Source types shown in the docs: "redmine", "jira", "linear". The set
     // is not closed yet (no JSON Schema published).
     "sources": {
-      // The agency tracker: dedicated project space during the build phase.
-      // Auth mode "env": the agent may log the Redmine CLI in by itself,
-      // passing the variable by name only.
+      // The client's tracker: authoritative for ticket content, read ticket
+      // details here. No "auth": the Jira CLI is assumed pre-configured, the
+      // user keeps full control of authentication.
+      "client": {
+        "type": "jira",
+        "url": "https://acme.atlassian.net",
+        "project": "ACME",
+        "roles": ["ticket_details"]
+      },
+      // The agency tracker: where time is booked during the build phase, and
+      // where the client reference is carried back. Auth mode "env": the agent
+      // may log the Redmine CLI in by itself, passing the variable by name only.
       "internal": {
         "type": "redmine",
         "url": "https://redmine.agency.example",
         "project": "acme-build",
-        "auth": { "mode": "env", "api_key_env": "REDMINE_AGENCY_API_KEY" }
+        "auth": { "mode": "env", "api_key_env": "REDMINE_AGENCY_API_KEY" },
+        "roles": ["time_logging", "external_refs"],
+        // Optional catch-all ticket to book time with no dedicated ticket.
+        "time_logging": { "catch_all_ticket": "SUPPORT-0" }
       },
-      // The client's own tracker, a second legitimate source for this
-      // project. No "auth": the Jira CLI is assumed pre-configured, the
-      // user keeps full control of authentication.
-      "client": { "type": "jira", "url": "https://acme.atlassian.net", "project": "ACME" }
-    },
-    // Where new tickets go today.
-    "write_target": { "source": "internal", "project": "acme-build" }
-    // After go-live, moving to the shared maintenance space means
-    // replacing the write_target line above with:
-    // "write_target": { "source": "internal", "project": "maintenance-general" }
+      // A hosting provider's tracker: NOT authoritative ("does not make foi"),
+      // used only to open and read hosting requests. When the hosting team is
+      // inside the same company, this can instead be a separate project space
+      // on the "internal" source rather than a distinct source.
+      "hosting": {
+        "type": "redmine",
+        "url": "https://redmine.hosting-provider.example",
+        "project": "hosting-acme",
+        "roles": ["hosting_requests"]
+      }
+    }
+    // No single "write_target": actions route by role. Reading details -> the
+    // "ticket_details" source; booking time -> the "time_logging" source. The
+    // build -> maintenance lifecycle move is a one-line change to the "project"
+    // of the "internal" source (from "acme-build" to "maintenance-general").
   },
 
   // ---------------------------------------------------------------------------
@@ -169,8 +202,9 @@
   // ---------------------------------------------------------------------------
   // Environments and their typed connectors (technical-considerations 1.6)
   // ---------------------------------------------------------------------------
-  // Environment ids are free-form map keys; "preprod" and "prod" is the
-  // convention used here (taxonomy is an open question, see notes.md #8).
+  // Environment ids are free-form map keys; the suggested (not enforced)
+  // convention is dev / preprod (staging) / prod. This example uses preprod
+  // and prod (technical-considerations 1.6).
   // Connectors nested under an environment belong to it, so they do not
   // repeat an "environment" field.
   "environments": {
@@ -228,8 +262,11 @@
       "host": "db.prod.acme.example",
       "port": 3306,
       "database": "acme_shop",
-      // Read-only account; a guardrail rule below forbids writes anyway.
+      // Read-only account; the structured "access" marker lets tooling and the
+      // agent check the guardrail without parsing prose (a rule below forbids
+      // writes too). See technical-considerations 1.8.
       "user": "acme_ro",
+      "access": "read-only",
       "password_env": "ACME_PROD_DB_PASSWORD"
     },
     // Search layer: Elasticsearch declares an index.
@@ -281,7 +318,26 @@
   },
 
   // ---------------------------------------------------------------------------
-  // IF-THEN intent rules (technical-considerations 1.8)
+  // Local commands: acting on this project locally (technical-considerations 1.10)
+  // ---------------------------------------------------------------------------
+  // The manifest's one executable surface: typed and explicit, never smuggled
+  // into a connector field. The CLI lists these; the agent decides whether to
+  // run one. A "local_commands" block in a COMMITTED manifest is subject to
+  // confirmation on first use (see technical-considerations 5); self-authored
+  // commands belong in the gitignored .aimanager.local.jsonc overlay instead.
+  "local_commands": {
+    "logs_local": {
+      "run": "docker compose logs -f app",
+      "label": "Tail the local app container logs"
+    },
+    "db_shell": {
+      "run": "docker compose exec db mysql -u acme_ro acme_shop",
+      "label": "Open a read-only MySQL shell in the local db container"
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // IF-THEN intent rules and guardrails (technical-considerations 1.8)
   // ---------------------------------------------------------------------------
   // A declarative routing table from intents to approaches. "if" is a
   // plain-language condition the agent recognizes in the user's request;
@@ -291,7 +347,8 @@
   "rules": [
     // Skill routing.
     { "if": "database access is needed", "then": "use the 'db-inspect' skill with the matching data_stores connector" },
-    { "if": "a ticket must be read or created", "then": "use the 'ticket-workflow' skill; create tickets only via trackers.write_target" },
+    { "if": "a ticket must be read", "then": "use the 'ticket-workflow' skill; read details from the source holding the 'ticket_details' role" },
+    { "if": "time must be booked for work done", "then": "use the 'ticket-workflow' skill; book time on the source holding the 'time_logging' role" },
 
     // Connector routing.
     { "if": "prod logs are needed", "then": "use the logs connector of the prod environment; never ssh to prod directly" },
