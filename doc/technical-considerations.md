@@ -10,6 +10,7 @@ This document details the technical topics behind the user stories. Nothing here
 - File name: `.aimanager.jsonc` (decided).
 - A top-level `version` field from day one, so the schema can evolve without breaking existing manifests.
 - A published JSON Schema for editor completion and CLI validation.
+- The complete schema is frozen by a commented golden example, [reference-manifest.jsonc](reference-manifest.jsonc), which exercises every feature once. Until the JSON Schema exists, the example is the normative source when it and the prose disagree.
 
 ### 1.2 Resolution
 
@@ -38,8 +39,8 @@ Proposed model:
     },
     // Where new tickets go today.
     "write_target": { "source": "internal", "project": "acme-build" }
-    // After go-live, moving the project to the shared maintenance space
-    // is this single-line change:
+    // After go-live, moving to the shared maintenance space means
+    // replacing the write_target line above with:
     // "write_target": { "source": "internal", "project": "maintenance-general" }
   }
 }
@@ -114,7 +115,7 @@ Candidate connector types for v1, driven by actual needs:
 | Type | Declares | Example use |
 |------|----------|-------------|
 | `ssh` | host, optional user/jump host | reach a preprod box |
-| `logs` | environment (preprod/staging, prod), transport (ssh/file), location or systemd journal unit | read prod logs |
+| `logs` | transport (ssh/file), systemd journal unit or file path; nested under its environment | read prod logs |
 | `database` | engine (mysql, postgres...), host, port, database, credential reference | inspect data |
 | `elasticsearch` / `solr` / `redis` | endpoint, index/core/db, credential reference | query search or cache layers |
 | `docs` | local path or remote URL/repo | find the functional documentation |
@@ -126,6 +127,7 @@ Rationale for banning raw shell strings in the manifest: a manifest can live in 
 ### 1.7 Secrets
 
 - The manifest **never contains secret values**. It references where credentials live, typically by environment variable name (`"password_env": "ACME_DB_PASSWORD"`).
+- Tracker and code hosting sections carry no credential references at all: authentication there is delegated to the external CLIs configured on the machine (Redmine CLI, GitLab CLI, GitHub CLI; the setup skill offers to install them, see 3.2). Only data stores that agents query directly reference credentials, by environment variable name.
 - The setup skill may ask the user for variable *names* and where they are defined, but must never read or echo their values.
 - Practical consequence to surface to users (didactics): agents inherit their environment at startup, so a newly defined variable requires restarting the agent.
 

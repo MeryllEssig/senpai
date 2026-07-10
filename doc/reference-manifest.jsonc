@@ -1,0 +1,275 @@
+// =============================================================================
+// .aimanager.jsonc - REFERENCE EXAMPLE ("golden" manifest)
+// =============================================================================
+// This file is the reference example for the AI Manager manifest format. It
+// freezes the schema: every feature described in the spec documents appears
+// here at least once, with the exact field shapes the docs define.
+//
+//   - doc/goal.md                     what AI Manager is and is not
+//   - doc/user-stories.md             who needs what and why
+//   - doc/technical-considerations.md field shapes (sections 1.1 to 1.8)
+//   - doc/notes.md                    open questions and decisions
+//
+// The project below is entirely fictional: an "acme" client, example hosts,
+// billing/catalog repos. No real client, company, URL, or credential appears.
+//
+// Ground rules the format guarantees:
+//   - Purely declarative. The manifest states what exists and how to reach
+//     it. It never embeds shell commands or anything executable.
+//   - No secret values. Credentials are referenced by environment variable
+//     NAME only (for example "password_env"), never by value.
+//   - JSONC. Comments are encouraged: the file should explain itself to
+//     teammates and to AI agents alike.
+//
+// Resolution: the CLI finds this file by walking up the directory tree from
+// the current working directory, exactly like .git discovery. It can sit at
+// the repo root, in a parent directory of a client repo that must not carry
+// tooling files, or in any plain folder (git is not required).
+// =============================================================================
+{
+  // Manifest schema version, present from day one so the schema can evolve
+  // without breaking existing manifests. Integer, starts at 1.
+  "version": 1,
+
+  // ---------------------------------------------------------------------------
+  // Project identity
+  // ---------------------------------------------------------------------------
+  // Who this project is. "context" is free text addressed to the AI agent:
+  // anything a new teammate would need on day one belongs there.
+  "project": {
+    // Machine-friendly identifier (slug).
+    "name": "acme-shop",
+    // Human-friendly display name.
+    "label": "ACME Online Shop",
+    // Free-text context for the AI. Keep it short and factual.
+    "context": "E-commerce platform built by the agency for the ACME client. Multi-repo galaxy: a root orchestrator repo plus interdependent sub-repos under www/. Two synchronized GitLab instances: merge requests and test pipelines on the agency instance, deployment pipelines on the client instance. Currently in the build phase, so new tickets go to the dedicated project space on the agency Redmine (see trackers.write_target).",
+    // Free-form technology hints for the agent, not an enum.
+    "stack": ["php 8.3 / symfony 7", "vue 3", "mysql 8", "elasticsearch 8", "solr 9", "redis 7"]
+  },
+
+  // ---------------------------------------------------------------------------
+  // Trackers: multiple sources, one write target (technical-considerations 1.3)
+  // ---------------------------------------------------------------------------
+  // "sources" answers "where can tickets about this project live" (read side).
+  // "write_target" answers "where do new tickets go right now" (write side)
+  // and must point to a declared source.
+  "trackers": {
+    // Source types shown in the docs: "redmine", "jira", "linear". The set
+    // is not closed yet (no JSON Schema published).
+    "sources": {
+      // The agency tracker: dedicated project space during the build phase.
+      "internal": { "type": "redmine", "url": "https://redmine.agency.example", "project": "acme-build" },
+      // The client's own tracker, a second legitimate source for this project.
+      "client": { "type": "jira", "url": "https://acme.atlassian.net", "project": "ACME" }
+    },
+    // Where new tickets go today.
+    "write_target": { "source": "internal", "project": "acme-build" }
+    // After go-live, moving to the shared maintenance space means
+    // replacing the write_target line above with:
+    // "write_target": { "source": "internal", "project": "maintenance-general" }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Code hosting: synchronized instances with roles (technical-considerations 1.5)
+  // ---------------------------------------------------------------------------
+  // Each hosting endpoint is declared once, with "roles" stating which
+  // operations belong to it. With roles declared, "create the MR" routes to
+  // "dev" and "trigger the deployment" routes to "ops" without any
+  // per-request instruction. A single-instance project declares one instance
+  // holding every role.
+  "code_hosting": {
+    "instances": {
+      "dev": {
+        "platform": "gitlab",
+        "url": "https://gitlab.agency.example",
+        // The agent picks the instance by role.
+        "roles": ["merge_requests", "test_pipelines"]
+      },
+      "ops": {
+        "platform": "gitlab",
+        "url": "https://gitlab.client.example",
+        "roles": ["deployment_pipelines"]
+      }
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Repos: the multi-repo galaxy (technical-considerations 1.4 and 1.5)
+  // ---------------------------------------------------------------------------
+  // One manifest at the galaxy root describes the members and their
+  // "depends_on" edges. "role" is a free-form hint for the agent, not an enum
+  // the CLI interprets. "path" is relative to the directory containing this
+  // manifest. "hosting" maps instance ids (declared above) to the repo's path
+  // on that instance; mirrors can differ in namespace, and a repo may exist
+  // on only one instance.
+  "repos": {
+    // The galaxy root: orchestration scripts, CI, provisioning.
+    "root": {
+      "path": ".",
+      "role": "orchestrator",
+      "hosting": { "dev": "acme/shop-galaxy" }
+    },
+    // Shared code consumed by the other members.
+    "bundle_core": {
+      "path": "www/bundle_core",
+      "role": "shared bundle (domain entities, helpers)",
+      // Internal-only repo: present on the dev instance, not mirrored.
+      "hosting": { "dev": "acme/bundle-core" }
+    },
+    "api_billing": {
+      "path": "www/api_billing",
+      "role": "api",
+      "depends_on": ["bundle_core"],
+      // Instance id -> repo path on that instance.
+      "hosting": { "dev": "acme/api-billing", "ops": "client-mirror/api-billing" }
+    },
+    "front_billing": {
+      "path": "www/front_billing",
+      "role": "front",
+      "depends_on": ["api_billing"],
+      "hosting": { "dev": "acme/front-billing", "ops": "client-mirror/front-billing" }
+    },
+    "front_catalog": {
+      "path": "www/front_catalog",
+      "role": "front",
+      "depends_on": ["bundle_core"],
+      "hosting": { "dev": "acme/front-catalog", "ops": "client-mirror/front-catalog" }
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Environments and their typed connectors (technical-considerations 1.6)
+  // ---------------------------------------------------------------------------
+  // Environment ids are free-form map keys; "preprod" and "prod" is the
+  // convention used here (taxonomy is an open question, see notes.md #8).
+  // Connectors nested under an environment belong to it, so they do not
+  // repeat an "environment" field.
+  "environments": {
+    "preprod": {
+      "label": "Preprod (staging)",
+      "url": "https://preprod.shop.acme.example",
+      // Typed ssh connector: host, optional user and jump host.
+      "ssh": {
+        "host": "preprod-web01.acme.example",
+        "user": "deploy",
+        "jump_host": "bastion.agency.example"
+      },
+      // Typed logs connector, transport "ssh": the agent reads the systemd
+      // journal unit through this environment's ssh connector above.
+      "logs": {
+        "transport": "ssh",
+        "journal_unit": "acme-shop.service"
+      }
+    },
+    "prod": {
+      "label": "Production",
+      "url": "https://shop.acme.example",
+      // No ssh connector on purpose: agents never ssh to prod (see rules).
+      // Typed logs connector, transport "file": prod logs are shipped to a
+      // share mounted on the workstation, readable without touching prod.
+      "logs": {
+        "transport": "file",
+        "path": "/mnt/acme-logs/prod/app.log"
+      }
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Data stores: typed, declarative connectors (technical-considerations 1.6)
+  // ---------------------------------------------------------------------------
+  // "type" selects the connector shape. "environment" points to a declared
+  // environment above. Usernames are plain (not secrets); passwords, tokens
+  // and API keys are referenced by environment variable NAME only
+  // (technical-considerations 1.7). Never put a secret value here.
+  "data_stores": {
+    "db_preprod": {
+      "type": "database",
+      "environment": "preprod",
+      "engine": "mysql",
+      "host": "db.preprod.acme.example",
+      "port": 3306,
+      "database": "acme_shop",
+      "user": "acme_ro",
+      "password_env": "ACME_PREPROD_DB_PASSWORD"
+    },
+    "db_prod": {
+      "type": "database",
+      "environment": "prod",
+      "engine": "mysql",
+      "host": "db.prod.acme.example",
+      "port": 3306,
+      "database": "acme_shop",
+      // Read-only account; a guardrail rule below forbids writes anyway.
+      "user": "acme_ro",
+      "password_env": "ACME_PROD_DB_PASSWORD"
+    },
+    // Search layer: Elasticsearch declares an index.
+    "search_products": {
+      "type": "elasticsearch",
+      "environment": "preprod",
+      "endpoint": "https://es.preprod.acme.example:9200",
+      "index": "acme_products",
+      "api_key_env": "ACME_PREPROD_ES_API_KEY"
+    },
+    // Legacy search layer: Solr declares a core.
+    "search_legacy": {
+      "type": "solr",
+      "environment": "preprod",
+      "endpoint": "https://solr.preprod.acme.example:8983",
+      "core": "acme_catalog",
+      "user": "solr_ro",
+      "password_env": "ACME_PREPROD_SOLR_PASSWORD"
+    },
+    // Cache layer: Redis declares a numeric db.
+    "cache": {
+      "type": "redis",
+      "environment": "preprod",
+      "endpoint": "redis://redis.preprod.acme.example:6379",
+      "db": 0,
+      "password_env": "ACME_PREPROD_REDIS_PASSWORD"
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Documentation locations (technical-considerations 1.6, "docs" connector)
+  // ---------------------------------------------------------------------------
+  // Each entry declares exactly one location field: "path" (local, relative
+  // to the directory containing this manifest), "url" (remote page or space),
+  // or "repo" (remote repository holding documentation).
+  "docs": {
+    "functional": {
+      "path": "doc/functional",
+      "label": "Functional specifications (markdown, versioned with the galaxy)"
+    },
+    "wiki": {
+      "url": "https://wiki.agency.example/acme-shop",
+      "label": "Agency wiki space for the project"
+    },
+    "architecture": {
+      "repo": "https://gitlab.agency.example/acme/architecture-docs.git",
+      "label": "Architecture decision records"
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // IF-THEN intent rules (technical-considerations 1.8)
+  // ---------------------------------------------------------------------------
+  // A declarative routing table from intents to approaches. "if" is a
+  // plain-language condition the agent recognizes in the user's request;
+  // "then" is the instruction to follow. AI Manager does not install, verify,
+  // or execute the referenced skills or commands; the agent resolves them
+  // itself. This is also the place for project-specific guardrails.
+  "rules": [
+    // Skill routing.
+    { "if": "database access is needed", "then": "use the 'db-inspect' skill with the matching data_stores connector" },
+    { "if": "a ticket must be read or created", "then": "use the 'ticket-workflow' skill; create tickets only via trackers.write_target" },
+
+    // Connector routing.
+    { "if": "prod logs are needed", "then": "use the logs connector of the prod environment; never ssh to prod directly" },
+    { "if": "merge requests are needed after changes in several repos", "then": "create one merge request per modified repo, each on the instance holding the 'merge_requests' role" },
+
+    // Guardrails.
+    { "if": "an operation would write to the prod database", "then": "do not do it; the prod database is strictly read-only for agents, ask the user instead" },
+    { "if": "a ticket would be created in the client Jira", "then": "ask the user for explicit confirmation first" }
+  ]
+}
