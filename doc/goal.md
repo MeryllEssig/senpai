@@ -22,7 +22,7 @@ AI agents start every session blind to the project's ecosystem. The developer ha
 4. **Agent-agnostic.** Usable from any agentic ecosystem: Claude Code, Codex, Gemini CLI, OpenCode, and whatever comes next. The lowest common denominator is a CLI on `$PATH` plus markdown instructions.
 5. **Token-efficient.** Skills use progressive discovery: a minimal entry point, deeper detail loaded only when needed. The CLI answers narrowly scoped queries instead of dumping the full manifest.
 6. **Didactic setup.** Setup and management skills interview the user, study the folder first, explain what they do and why (including practical caveats such as restarting the agent to pick up new environment variables), and speak the user's language.
-7. **Tool-agnostic core, optional connectors.** The core does not depend on any specific tracker or code hosting platform; connectors for common tools may be provided when needed.
+7. **Tool-agnostic core, optional connectors.** The core does not depend on any specific tracker or code hosting platform; connectors for common tools may be provided when needed, and the skills ship a strict minimum of guidance notes for popular CLIs (`gh`, `glab` and similar) so agents handle them properly.
 
 ## Deliverables
 
@@ -30,6 +30,7 @@ AI agents start every session blind to the project's ecosystem. The developer ha
 - **A CLI** - parses and validates the manifest, answers scoped queries, returns LLM-optimized output.
 - **Usage skill(s)** - triggered manually or automatically when a user request needs external data; route intents to the right declared capability.
 - **Setup and management skills** - guided manifest creation, tool installation assistance, automation-opportunity discovery.
+- **An internal QA skill** (maintainer-only, never shipped) - analyzes real conversation transcripts to flag agent inefficiencies and route each one to its root cause (the project's manifest or AI Manager itself), with a remediation proposal.
 
 ## Non-goals
 

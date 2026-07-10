@@ -181,6 +181,7 @@ The single entry point between manifests and agents. Responsibilities:
 - **Flow**: check a manifest exists (cheap resolve) -> query the relevant slice -> act on the returned connectors and rules -> answer.
 - **Built-in guardrail**: if an action requires an external CLI the agent cannot authenticate to without reading secret values itself, it stops entirely and asks the user how to proceed (see 1.7).
 - **Progressive discovery**: the always-loaded surface is a short description plus the instruction to call the CLI. Everything else (connector semantics, edge cases) lives in deeper reference files or in CLI output, loaded only when the task requires it. When the user's question needs no external data, the cost is near zero.
+- **Tool guidance notes**: the core is tool-agnostic, but the skills ship a strict minimum of per-tool guidance for popular CLIs (`gh`, `glab` and similar): the few non-obvious behaviors needed to use each tool properly (multi-instance authentication, host selection, useful output flags). One small reference note per tool, loaded through progressive discovery only when that tool is actually involved; never a full manual.
 
 ### 3.2 Setup skill
 
@@ -197,7 +198,17 @@ A guided, didactic process to bootstrap a manifest in any folder (repo or not):
 - Reviews the project and the manifest to suggest automation opportunities that are not yet covered: undeclared data sources it can detect, repetitive manual steps mentioned by the user, missing IF-THEN rules, tools worth installing.
 - Output is a proposal list the user validates; accepted items translate into manifest updates or setup actions.
 
-### 3.4 Explanatory guidance (cross-cutting)
+### 3.4 Conversation QA skill (internal, not shipped)
+
+A maintainer-only skill for the QA of AI Manager itself. It lives in this repository but is never delivered to end users.
+
+- **Input**: a conversation transcript provided by the maintainer, in the format of the ecosystem that produced it (formats differ per agent; identifying the ecosystem is the skill's first step).
+- **Detection**: it walks the conversation and flags every inefficiency, including at least: failed or retried commands; workarounds invented because a declared fact was missing or wrong; questions to the user that the manifest should have answered; the whole manifest dumped where a scoped query would have done; wrong targets (ticket in the wrong tracker project, merge request on the wrong instance, wrong environment); authentication dead-ends; ignored rules or guardrails.
+- **Root-cause classification**: each finding is attributed to one of: (a) project-side, the manifest is wrong or incomplete at a specific spot; (b) AI Manager-side, a gap in the schema, the CLI output, a skill's wording, or a missing tool guidance note; (c) external, outside AI Manager's scope.
+- **Output**: a findings report with, for each finding, a concrete remediation proposal (a manifest edit, an AI Manager change naming the affected component, or a tool guidance note to add).
+- Transcripts can contain sensitive client material; how the skill handles that is an open question (see notes #20).
+
+### 3.5 Explanatory guidance (cross-cutting)
 
 All setup and management skills must:
 

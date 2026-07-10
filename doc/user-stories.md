@@ -58,11 +58,11 @@ As a user, I want the usage skill to activate automatically when my question req
 **US-3.2 - Progressive discovery**
 As a user, I want skills designed with progressive discovery (a minimal always-loaded entry point, details fetched only when needed), so that the AI understands immediately what to do and no tokens are consumed when the context is not needed.
 
-**US-3.4 - Hard stop when authentication is out of reach**
-As a user, I want the agent to stop entirely and ask me how to proceed whenever an action requires an external CLI it cannot authenticate to without reading secret values itself, so that secrets never enter the conversation and I keep control of the login process.
-
 **US-3.3 - Any agent ecosystem**
 As a user of several agentic tools (Claude Code, Codex, Gemini CLI, OpenCode, and others), I want the skills and CLI to be agent-agnostic, so that one project setup serves every ecosystem.
+
+**US-3.4 - Hard stop when authentication is out of reach**
+As a user, I want the agent to stop entirely and ask me how to proceed whenever an action requires an external CLI it cannot authenticate to without reading secret values itself, so that secrets never enter the conversation and I keep control of the login process.
 
 ## Epic 4 - Set up and maintain (management skills)
 
@@ -94,3 +94,16 @@ As a user, I want runtime interactions to happen in my language with no default 
 
 **US-5.3 - Tool-agnostic core, optional connectors**
 As a maintainer, I want the core to stay agnostic of any specific tracker or tool, with connectors provided only when necessary, so that the system survives tool churn.
+
+**US-5.4 - Minimal guidance for popular tools**
+As a user of popular CLIs such as `gh` or `glab`, I want the shipped skills to embed a strict minimum of tool-specific guidance (the few non-obvious behaviors, not a full manual), so that the agent handles these tools properly while the core stays tool-agnostic.
+
+## Epic 6 - Self-QA (maintainer tooling, not shipped)
+
+An internal skill that lives in this repository but is never delivered to end users: it exists to QA AI Manager itself against real usage.
+
+**US-6.1 - Analyze a conversation for inefficiencies**
+As the AI Manager maintainer, I want an internal skill that takes a conversation transcript as input (in the format of whichever agent ecosystem produced it) and flags every moment the agent was inefficient (a failed command, a missing declared fact that forced a workaround, a question the manifest should have answered, a wrong target, and similar), so that real usage sessions become QA material for AI Manager.
+
+**US-6.2 - Root-cause classification and remediation proposals**
+As the AI Manager maintainer, I want each flagged inefficiency to come with a root cause (the project's manifest is wrong or incomplete at a specific spot, AI Manager itself is imperfect at a specific spot, or the cause is external) and a concrete remediation proposal, so that every analyzed conversation turns into actionable improvements.
