@@ -53,13 +53,36 @@
   // "sources" answers "where can tickets about this project live" (read side).
   // "write_target" answers "where do new tickets go right now" (write side)
   // and must point to a declared source.
+  //
+  // Optional "auth" on a source (same on code_hosting instances) declares how
+  // the matching external command authenticates; commands differ, so the mode
+  // does too:
+  //   - "preconfigured" (default when "auth" is absent): the CLI is already
+  //     set up on the machine, authentication stays in the user's hands.
+  //   - "env": credentials live in environment variables referenced by NAME
+  //     ("api_key_env", "token_env", "password_env"...); the agent may drive
+  //     the login or re-login process itself, never reading the values.
+  //   - "interactive": the agent starts the CLI's login flow and hands over
+  //     to the user to complete it.
+  // Secret VALUES are forbidden in this file in every mode. If the agent has
+  // no way to authenticate without reading a secret value itself, it must
+  // stop entirely and ask the user how to proceed (core behavior).
   "trackers": {
     // Source types shown in the docs: "redmine", "jira", "linear". The set
     // is not closed yet (no JSON Schema published).
     "sources": {
       // The agency tracker: dedicated project space during the build phase.
-      "internal": { "type": "redmine", "url": "https://redmine.agency.example", "project": "acme-build" },
-      // The client's own tracker, a second legitimate source for this project.
+      // Auth mode "env": the agent may log the Redmine CLI in by itself,
+      // passing the variable by name only.
+      "internal": {
+        "type": "redmine",
+        "url": "https://redmine.agency.example",
+        "project": "acme-build",
+        "auth": { "mode": "env", "api_key_env": "REDMINE_AGENCY_API_KEY" }
+      },
+      // The client's own tracker, a second legitimate source for this
+      // project. No "auth": the Jira CLI is assumed pre-configured, the
+      // user keeps full control of authentication.
       "client": { "type": "jira", "url": "https://acme.atlassian.net", "project": "ACME" }
     },
     // Where new tickets go today.
@@ -83,12 +106,18 @@
         "platform": "gitlab",
         "url": "https://gitlab.agency.example",
         // The agent picks the instance by role.
-        "roles": ["merge_requests", "test_pipelines"]
+        "roles": ["merge_requests", "test_pipelines"],
+        // Auth mode "env": if glab is not yet configured for this instance,
+        // the agent may run the login itself with the variable by name.
+        "auth": { "mode": "env", "token_env": "GITLAB_AGENCY_TOKEN" }
       },
       "ops": {
         "platform": "gitlab",
         "url": "https://gitlab.client.example",
-        "roles": ["deployment_pipelines"]
+        "roles": ["deployment_pipelines"],
+        // Auth mode "interactive": the agent may start "glab auth login" for
+        // this instance but the user completes the flow.
+        "auth": { "mode": "interactive" }
       }
     }
   },

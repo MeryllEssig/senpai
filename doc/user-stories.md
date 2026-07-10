@@ -35,6 +35,10 @@ As a developer, I want the manifest to work in any folder, not only git reposito
 **US-1.10 - Declare several code hosting instances with roles**
 As a developer whose repos live on two synchronized GitLab instances with different roles (merge requests and test pipelines on the first, deployment pipelines viewed and triggered on the second), I want to declare each instance and its role in the manifest, so that the AI opens merge requests on the right instance and checks or triggers deployments on the other without being told each time.
 
+**US-1.11 - Declare how each external tool authenticates**
+As a developer whose external commands authenticate in different ways, I want tracker sources and code hosting instances to optionally declare an auth mode (pre-configured CLI, environment variables referenced by name, interactive login), so that when I allow it the AI drives the login or re-login process itself, and when I omit it the AI assumes the CLI is pre-configured and authentication stays entirely in my hands.
+Constraint: secret values in the manifest are forbidden in every mode; only references (variable names) and mode names may appear.
+
 ## Epic 2 - Query the context (the CLI)
 
 **US-2.1 - Scoped answers, not dumps**
@@ -53,6 +57,9 @@ As a user, I want the usage skill to activate automatically when my question req
 
 **US-3.2 - Progressive discovery**
 As a user, I want skills designed with progressive discovery (a minimal always-loaded entry point, details fetched only when needed), so that the AI understands immediately what to do and no tokens are consumed when the context is not needed.
+
+**US-3.4 - Hard stop when authentication is out of reach**
+As a user, I want the agent to stop entirely and ask me how to proceed whenever an action requires an external CLI it cannot authenticate to without reading secret values itself, so that secrets never enter the conversation and I keep control of the login process.
 
 **US-3.3 - Any agent ecosystem**
 As a user of several agentic tools (Claude Code, Codex, Gemini CLI, OpenCode, and others), I want the skills and CLI to be agent-agnostic, so that one project setup serves every ecosystem.

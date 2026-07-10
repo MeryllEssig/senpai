@@ -46,7 +46,7 @@ Proposed model:
 }
 ```
 
-- `sources` answers "where can tickets about this project live" (read side).
+- `sources` answers "where can tickets about this project live" (read side). A source may carry an optional `auth` declaration (see 1.7).
 - `write_target` answers "where do new tickets go right now" (write side) and can point to a different project space than the source's default, covering the lifecycle case with a one-line change (see the commented line in the example).
 - Optional refinement: per-category routing (bugs to the client's Jira, internal chores to our Redmine). Deferred until a real case demands it (see notes #6).
 
@@ -102,7 +102,7 @@ A repo is not always hosted in one place. Real case: two synchronized GitLab ins
 }
 ```
 
-- `instances` declares each hosting endpoint once, with `roles` stating which operations belong to it (open merge requests, watch test pipelines, view and trigger deployment pipelines).
+- `instances` declares each hosting endpoint once, with `roles` stating which operations belong to it (open merge requests, watch test pipelines, view and trigger deployment pipelines). An instance may carry an optional `auth` declaration (see 1.7); without one, the platform CLI is assumed to be pre-configured for that instance.
 - Each repo maps instance ids to its path on that instance.
 - With roles declared, "create the MR" routes to `dev` and "trigger the deployment" routes to `ops`, without any per-request instruction. A single-instance project declares one instance holding every role.
 
@@ -127,7 +127,11 @@ Rationale for banning raw shell strings in the manifest: a manifest can live in 
 ### 1.7 Secrets
 
 - The manifest **never contains secret values**. It references where credentials live, typically by environment variable name (`"password_env": "ACME_DB_PASSWORD"`).
-- Tracker and code hosting sections carry no credential references at all: authentication there is delegated to the external CLIs configured on the machine (Redmine CLI, GitLab CLI, GitHub CLI; the setup skill offers to install them, see 3.2). Only data stores that agents query directly reference credentials, by environment variable name.
+- External commands differ in how they authenticate, so tracker sources and hosting instances may carry an **optional `auth` declaration** whose `mode` matches what the command supports. Secret values are forbidden in every mode; only references and mode names appear in the file. Modes shown in the docs (set not closed):
+  - `preconfigured` (the default when `auth` is absent): the external CLI is assumed already configured on the machine, and authentication stays entirely in the user's hands. `glab` notably can be authenticated against several GitLab instances ahead of time.
+  - `env`: credentials live in environment variables referenced by name (`"token_env": "GITLAB_AGENCY_TOKEN"`, `"api_key_env"`, `"password_env"`...). The agent may drive the login or re-login process itself, passing variables by name and never reading their values.
+  - `interactive`: the agent may start the CLI's login flow but hands over to the user to complete it.
+- **Hard stop on unreachable authentication (core behavior).** If the user requests an action through an external CLI and the agent has no way to connect without reading secret values itself, it must stop entirely and ask the user how to proceed. This is a built-in behavior of the usage skill, not a per-project rule: it applies even when the manifest declares nothing about it.
 - The setup skill may ask the user for variable *names* and where they are defined, but must never read or echo their values.
 - Practical consequence to surface to users (didactics): agents inherit their environment at startup, so a newly defined variable requires restarting the agent.
 
@@ -175,6 +179,7 @@ The single entry point between manifests and agents. Responsibilities:
 
 - **Trigger**: manually, or automatically when the user's question requires external data (tickets, logs, database, docs). The skill description must be written so ecosystems with model-driven skill selection activate it on such questions.
 - **Flow**: check a manifest exists (cheap resolve) -> query the relevant slice -> act on the returned connectors and rules -> answer.
+- **Built-in guardrail**: if an action requires an external CLI the agent cannot authenticate to without reading secret values itself, it stops entirely and asks the user how to proceed (see 1.7).
 - **Progressive discovery**: the always-loaded surface is a short description plus the instruction to call the CLI. Everything else (connector semantics, edge cases) lives in deeper reference files or in CLI output, loaded only when the task requires it. When the user's question needs no external data, the cost is near zero.
 
 ### 3.2 Setup skill
