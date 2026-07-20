@@ -1,0 +1,82 @@
+// =============================================================================
+// .aimanager/capsules.local.json - REFERENCE EXAMPLE (capsule values)
+// =============================================================================
+// This file is the reference example for the LOCAL CAPSULE-VALUES file that
+// pairs with the manifest's "capsules" block (technical-considerations 1.11).
+// The real file is plain JSON named ".aimanager/capsules.local.json"; this
+// documented copy is JSONC so it can explain itself. The values below match the
+// "db-preprod" capsule declared in the golden manifest
+// (doc/reference-manifest.jsonc).
+//
+//   - doc/reference-manifest.jsonc    the committed manifest and its "capsules"
+//   - doc/technical-considerations.md field shapes (section 1.11)
+//   - doc/goal.md                     why a secret value may live here
+//
+// What this file is:
+//   - NEVER committed. It is gitignored and holds real, machine-local values.
+//     It is the ONE place a real secret value may sit (technical-considerations
+//     1.7 and 5); it is read ONLY inside AI Manager's own process when it runs
+//     a capsule, and never reaches the agent, the transcript, or CLI output.
+//     It lives outside the personal overlay (.aimanager.local.jsonc) on
+//     purpose: the overlay merges into the manifest and is agent-readable,
+//     while this file must never be read by the agent.
+//   - Scaffolded by "aimanager init": one stub per non-supplied {placeholder}
+//     found in the manifest's capsule templates. The developer fills the stubs
+//     themselves, out of band; AI Manager never transfers a value.
+//
+// The committed / local boundary (technical-considerations 1.11):
+//   - Whatever the manifest author wrote LITERALLY in a "command" template is
+//     committed in the manifest. Every {placeholder} is filled from elsewhere.
+//   - Placeholders listed in the capsule's "supplied" are filled by the AGENT
+//     at call time (for "db-preprod" that is {query}); they are NOT in this
+//     file.
+//   - EVERY OTHER placeholder is filled here, by NAME, with a value that is
+//     either a literal string OR a "$ENV_VAR" reference.
+//
+// Each value, independently:
+//   - a literal string  -> the real value lives here (this is what softens the
+//     "no secret values" non-goal: a literal secret may sit in this file only);
+//   - a "$ENV_VAR" ref   -> the value stays in the environment; AI Manager
+//     resolves it at run time. Validation checks the reference syntax but does
+//     not inspect whether the name currently resolves.
+//
+// Checks:
+//   - "validate local": every non-supplied {placeholder} of every declared
+//     capsule has a structurally valid value here.
+//   - "doctor": validates the manifest, overlay, and this local configuration
+//     together; it does not inspect the environment or any remote service.
+//
+// Execution (technical-considerations 1.11): argv-based, no shell - each value
+// substitutes as one atomic argument, so quotes or $(...) inside a value are
+// just data. Both stdout and stderr are scrubbed before returning to the
+// agent: every resolved value below is replaced by its {name}.
+//
+// Run the capsule this file backs:
+//   aimanager run db-preprod --query "SELECT id FROM orders LIMIT 5"
+// The manifest template is:
+//   "mysql -h {host} -u {user} -p{password} {database} -e {query}"
+// Every run result displays this declared template, never its resolved form.
+// so the non-supplied placeholders filled below are: host, user, password,
+// database. {query} is supplied by the agent and is absent here on purpose.
+// =============================================================================
+{
+  // Keyed by capsule name, exactly as declared in the manifest's "capsules".
+  "db-preprod": {
+    // Non-secret coordinates, kept out of the committed manifest by choice
+    // (the author made them {placeholders}); literal values are fine here.
+    "host": "db.preprod.acme.example",
+    "user": "acme_ro",
+    "database": "acme_shop",
+
+    // The secret. Shown here as a "$ENV" reference, which keeps the value in
+    // the environment; runtime resolution happens only inside "aimanager run".
+    //
+    // This value could EQUALLY be a literal secret string, for example
+    //   "password": "s3cr3t-preprod-ro"
+    // which is the one case where a real secret value may live in a file. Use
+    // whichever the team prefers; both are valid, per value.
+    "password": "$ACME_PREPROD_DB_PASSWORD"
+
+    // {query} is NOT here: it is "supplied" by the agent at call time.
+  }
+}

@@ -15,4 +15,3 @@ Each project carries a single manifest file, `.aimanager.jsonc`, that declares e
 * [Example capsule values](./doc/reference-capsule.jsonc)
 * [Notes](./doc/notes.md)
 * [Ideas to explore](./doc/idea.md)
-* [Remaining product decisions and implementation work](./to-act.md)

@@ -41,16 +41,31 @@ Constraint: secret values in the manifest are forbidden in every mode; only refe
 
 **US-1.12 - Declare local commands**
 As a developer, I want to declare local commands the project relies on (for example a `docker compose` invocation to read logs or act on a service), so that the AI can act on the project locally, not only on external tools, and discover how through the CLI.
-Constraint: local commands are the manifest's one executable surface; a committed block is subject to confirmation on first use, and self-authored commands belong in the gitignored local overlay.
+Constraint: local commands are the manifest's one agent-run executable surface; the team vets committed commands like any other code, and personal commands belong in the gitignored local overlay. When a command must run from a specific directory, the label says so in prose (no `cwd` field).
 
 **US-1.13 - Onboard onto an existing manifest**
-As a developer joining a project that already carries a committed manifest, I want the agent to detect that I lack valid access and list the declared credential variable *names* missing from my environment (names only, never values), so that I can set them up myself without any secret being read.
+As a developer joining a project that already carries a committed manifest, I want `init` to scaffold my capsule values and `validate local` or `doctor` to validate the resulting local configuration, so that configuration mistakes are caught without any secret being read.
+Constraint: these checks do not inspect whether environment variables or skills are installed, and do not verify remote connectivity, credential validity, or authorization. The agent diagnoses runtime failures from command errors.
 
 **US-1.14 - Keep personal settings out of the shared manifest**
 As a developer, I want a personal, gitignored overlay (`.aimanager.local.jsonc`) beside the committed manifest for my private paths, preferences, and personal auth or local-command overrides, so that my machine-specific choices never touch the file my teammates share.
 
 **US-1.15 - Mark a connector read-only**
-As a developer, I want to declare a structured `"access": "read-only"` marker on a connector (for example the prod database), so that the guardrail is checkable by tooling and the agent without relying on prose rules alone.
+As a developer, I want to declare an optional structured `"access": "read-only"` marker on a connector or capsule (for example the prod database), so that the LLM receives a concise usage hint without mistaking it for an enforced permission.
+Constraint: `access` is advisory only. AI Manager returns it when present but never interprets or enforces it.
+
+**US-1.16 - Run a secret-bearing command without leaking the secret**
+As a developer whose database access needs a password, I want to declare a *capsule* - a `command` template in the committed manifest with `{variable}` placeholders, where the agent-supplied ones (like the SQL query) are marked `supplied` and the rest are filled from a never-committed local values file - so that `aimanager run` executes it in AI Manager's own process and returns the declared template plus scrubbed output, while the resolved command line (password included) never enters the agent's transcript.
+Constraint: the manifest holds no secret values; real values live only in the gitignored `.aimanager/capsules.local.json`, read only inside AI Manager's process.
+
+**US-1.17 - Scaffold my local capsule values on join**
+As a developer who just cloned a project that declares capsules, I want `aimanager init` to scaffold the local values file with one stub per non-supplied `{variable}`, and `validate local` or `doctor` to confirm every required entry exists and is structurally valid, so that I can complete my own setup out of band without any secret being transferred to me.
+
+**US-1.18 - Point a source at a custom skill**
+As a developer whose tracker is an in-house tool or needs a house workflow, I want an optional `skill` field on a source or hosting instance that overrides the default type-to-skill mapping, so that the agent drives that source with my custom skill when it is available and falls back to the generic connector shape when it is not.
+
+**US-1.19 - Link a connector to its galaxy member**
+As a developer on a galaxy where each service has its own logs and database, I want an optional `repo` field on a connector or environment naming the declared member it serves, so that the agent can answer "the logs of the billing service" without guessing from naming conventions.
 
 ## Epic 2 - Query the context (the CLI)
 
@@ -63,8 +78,15 @@ As a developer, I want the CLI to validate a manifest (syntax, schema, coherence
 **US-2.3 - Resolve from anywhere in the project**
 As an AI agent invoked in any subdirectory, I want the CLI to find the manifest by walking up the directory tree, so that resolution works regardless of the current working directory. When no manifest is found, I want the CLI to fail with an explanatory message rather than proceed silently.
 
-**US-2.4 - Report missing environment variables by name**
-As an AI agent, I want a CLI check (`doctor`) that lists the declared credential-reference variable names absent from the current environment (names only, never values), so that when I hit an authentication dead-end I can stop and tell the user exactly which variables to define.
+**US-2.4 - Validate the complete local configuration**
+As a developer, I want `doctor` to validate the resolved manifest, overlay, and local capsule configuration in one command, so that configuration errors are reported without probing the machine or any remote system.
+Constraint: `doctor` does not inspect environment-variable availability, installed skills, CLI sessions, credentials, connectivity, or remote permissions.
+
+**US-2.5 - Compact capability summary**
+As an AI agent, I want a `summary` command returning a compact inventory of what this project declares (sections present, ids, roles, capsules, tool skills to load) in a few dozen tokens, so that I can decide immediately which scoped queries are worth running.
+
+**US-2.6 - Diagnose a capsule execution without exposing secrets**
+As an AI agent, I want every `aimanager run` result, including failures, to contain the declared command template, scrubbed stdout and stderr, and the exit status, so that I can diagnose the command myself without seeing the resolved secret-bearing command line.
 
 ## Epic 3 - Use the context (usage skills)
 
@@ -80,6 +102,9 @@ As a user of several agentic tools (Claude Code, Codex, Gemini CLI, OpenCode, an
 **US-3.4 - Hard stop when authentication is out of reach**
 As a user, I want the agent to stop entirely and ask me how to proceed whenever an action requires an external CLI it cannot authenticate to without reading secret values itself, so that secrets never enter the conversation and I keep control of the login process.
 
+**US-3.5 - One manifest per session, anchored at launch**
+As a user, I want the agent to run the CLI from the session's launch directory and stop if resolution fails (never `cd`-ing around to pick up another manifest), so that the manifest resolved at launch applies to the whole session, subdirectory manifests included in no case.
+
 ## Epic 4 - Set up and maintain (management skills)
 
 **US-4.1 - Guided setup**
@@ -92,13 +117,20 @@ As a user, I want the setup skill to study the current folder first to assess th
 As a user, I want setup to never read the values of secret environment variables (it may ask me for variable names and where they are defined), so that secrets never enter the conversation or the manifest.
 
 **US-4.4 - Tool installation assistance**
-As a user, I want the setup skill to offer help installing the external CLIs my manifest relies on (Redmine CLI, GitLab CLI, GitHub CLI), so that declared capabilities are actually usable.
+As a user, I want the setup skill to offer help installing the external CLIs my manifest relies on (`glab`, `gh`, a Jira CLI; Redmine needs none, its shipped skill drives the REST API directly), so that declared capabilities are actually usable.
 
 **US-4.5 - Didactic guidance**
 As a user, I want every setup and management skill to explain what it does and what I must do (for example restarting the agent so new environment variables are picked up, or restarting a service), in my own language, so that I understand and trust the setup instead of executing it blindly.
 
 **US-4.6 - Automation discovery**
 As a user, I want a skill that reviews my project and my habits to suggest things that could be automated but are not yet, so that the setup keeps improving over time.
+
+**US-4.7 - Install a verified binary and the skills for my agents**
+As a Linux or macOS user on x86_64 or ARM64, I want the installer to verify the release SHA-256 checksum and copy AI Manager skills into the canonical global directory of each agent ecosystem I select, so that one installation safely configures Codex, Claude Code, Gemini CLI, or OpenCode for all my projects.
+
+**US-4.8 - Predictable update and uninstall**
+As a user, I want to update AI Manager by rerunning the idempotent installer and uninstall it with `installer.sh --uninstall`, so that lifecycle management has one entry point.
+Constraint: updates overwrite installed AI Manager skills rather than preserving local edits; uninstall removes only the binary and installer-owned skill files, never project configuration.
 
 ## Epic 5 - Project-wide constraints
 
@@ -111,8 +143,8 @@ As a user, I want runtime interactions to happen in my language with no default 
 **US-5.3 - Tool-agnostic core, optional connectors**
 As a maintainer, I want the core to stay agnostic of any specific tracker or tool, with connectors provided only when necessary, so that the system survives tool churn.
 
-**US-5.4 - Minimal guidance for popular tools**
-As a user of popular CLIs such as `gh` or `glab`, I want the shipped skills to embed a strict minimum of tool-specific guidance (the few non-obvious behaviors, not a full manual), so that the agent handles these tools properly while the core stays tool-agnostic.
+**US-5.4 - Per-tool guidance, depth matched to model familiarity**
+As a user of external tools, I want the shipped per-tool skills to carry a strict minimum for CLIs the models already know well (`gh`, `glab`: the few non-obvious behaviors, not a full manual) and a full driving skill for tools they know less (Redmine, Jira: API endpoints, time logging, statuses - the Redmine skill embedding Python stdlib-only scripts for the REST API), so that the agent handles every tool properly while the core stays tool-agnostic.
 
 ## Epic 6 - Self-QA (maintainer tooling, not shipped)
 

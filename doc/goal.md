@@ -8,7 +8,7 @@ Each project carries a single manifest file, `.aimanager.jsonc`, that declares e
 
 A companion CLI parses the manifest and returns to the agent **only what is needed** to answer the current user request. Generic skills (markdown instruction files an agent loads to learn a capability), installed once per machine rather than per project, cover using the CLI, setting up a manifest in a new project, and spotting automation opportunities.
 
-The system is **declarative**: it describes where things are and how to reach them, and AI Manager itself never installs or runs anything. Its one executable surface is the typed `local_commands` category: command strings AI Manager never runs, only the agent does, guarded by the trust model. The agent reads the declarations and figures out what to do.
+The system is **declarative**: it describes where things are and how to reach them, and AI Manager itself installs nothing and runs nothing except **capsules** through `aimanager run` - one-shot commands it executes in its own process precisely to keep a secret out of the agent's transcript (see [technical considerations](technical-considerations.md) 1.11). Its typed `local_commands` category holds command strings AI Manager never runs, only the agent does. The agent reads the declarations and figures out what to do.
 
 ## Problem
 
@@ -17,25 +17,28 @@ AI agents start every session blind to the project's ecosystem. The developer ha
 ## Objectives
 
 1. **Project-first.** Context lives with the project, not in a central configuration. The manifest sits in the project folder, which does not need to be a git repository; when committing it to a client repo is not possible, it sits in a parent directory instead. Resolution walks up from the current directory, like `.git`.
-2. **Declarative; AI Manager runs nothing.** The manifest describes connections (typed connectors: SSH, log files, DB, search engines, docs, and so on) and, as its one guarded executable surface, typed `local_commands`. Agents decide how and when to act on them; AI Manager installs and runs nothing on its own.
+2. **Declarative; AI Manager runs nothing except capsules.** The manifest describes connections (typed connectors: SSH, log files, DB, search engines, docs, and so on) and, as its explicit executable surface, typed `local_commands`. Agents decide how and when to act on them. AI Manager installs nothing and runs nothing on its own, with a single deliberate exception: **capsules**, one-shot commands it executes through `aimanager run` to keep a secret out of the agent's transcript (see [technical considerations](technical-considerations.md) 1.11). Everything else stays declarative; the agent acts.
 3. **Faithful to real project diversity.** Multiple trackers per project (ours plus the client's), tracker lifecycle (a project's tickets move to a general maintenance tracker after go-live), multi-repo galaxies (a main repository containing many interdependent sub-repositories) whose members must be orchestrated together, synchronized code hosting instances with distinct roles (merge requests and test pipelines on one, deployment pipelines on the other), non-git folders.
 4. **Agent-agnostic.** Usable from any agentic ecosystem: Claude Code, Codex, Gemini CLI, OpenCode, and whatever comes next. The lowest common denominator is a CLI on `$PATH` plus markdown instructions.
 5. **Token-efficient.** Skills use progressive discovery: a minimal entry point, deeper detail loaded only when needed. The CLI answers narrowly scoped queries instead of dumping the full manifest.
 6. **Didactic setup.** Setup and management skills interview the user, study the folder first, explain what they do and why (including practical caveats such as restarting the agent to pick up new environment variables), and speak the user's language.
-7. **Tool-agnostic core, optional connectors.** The core does not depend on any specific tracker or code hosting platform; connectors for common tools may be provided when needed, and the skills ship a strict minimum of guidance notes for popular CLIs (`gh`, `glab` and similar) so agents handle them properly.
+7. **Tool-agnostic core, shipped per-tool skills.** The core does not depend on any specific tracker or code hosting platform. AI Manager ships a skill per popular tool, with depth matched to what models already know: a strict minimum for CLIs like `gh` or `glab`, a full driving skill (with embedded API scripts where no good CLI exists, as for Redmine) for tools like Redmine or Jira. An optional `skill` field on a source lets a project point at a custom skill instead (see [technical considerations](technical-considerations.md) 3.1).
 
 ## Deliverables
 
 - **The manifest format** - a JSONC schema, commented, versioned.
 - **A CLI** - parses and validates the manifest, answers scoped queries, returns LLM-optimized output.
 - **Usage skill(s)** - triggered manually or automatically when a user request needs external data; route intents to the right declared capability.
+- **Per-tool skills** - shipped skills for popular tools (GitLab, GitHub, Jira, Redmine), depth matched to model familiarity; the Redmine skill embeds Python stdlib-only scripts driving the full REST API.
 - **Setup and management skills** - guided manifest creation, tool installation assistance, automation-opportunity discovery.
 - **An internal QA skill** (maintainer-only, never shipped) - analyzes real conversation transcripts to flag agent inefficiencies and route each one to its root cause (the project's manifest or AI Manager itself), with a remediation proposal.
 
 ## Non-goals
 
-- Storing secrets. The manifest references *where* credentials live (for example environment variable names), never their values.
-- Executing or installing project tooling itself. The manifest may declare `local_commands`, but AI Manager never runs them; the agent does, under the trust model.
+- Storing secrets in the manifest. The manifest references *where* credentials live (for example environment variable names), never their values. A companion local, gitignored, never-committed values file may hold real secret values (or env-var references) so AI Manager can run secret-bearing capsules without leaking them (see [technical considerations](technical-considerations.md) 1.11); secrets never appear in the manifest, in CLI output to the agent, or in the transcript.
+- Executing or installing project tooling itself, beyond capsules. The manifest may declare `local_commands`, but AI Manager never runs them; the agent does. The one thing AI Manager runs itself is a capsule (1.11), and only to keep the secret it carries out of the transcript.
+- Enforcing data-access permissions or a product-wide confirmation policy. Entries in the resolved configuration are authorized for agent use; optional `access` metadata only informs the LLM. Projects add their own use cases, restrictions, and confirmation requirements through rules and notes, while target services enforce the actual account permissions.
+- Guarding against a malicious committed manifest. AI Manager ships no trust or confirmation machinery: a committed manifest is vetted like any other committed file, by the team's own review process. The target users are teams and companies with an internal trust process (see [technical considerations](technical-considerations.md) 5).
 - Being a central registry. There is no machine-wide project index; each project is self-describing.
 
 ## Language policy
