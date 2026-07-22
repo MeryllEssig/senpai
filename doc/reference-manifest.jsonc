@@ -235,31 +235,6 @@
   },
 
   // ---------------------------------------------------------------------------
-  // Components: operational scopes inside repositories (1.4)
-  // ---------------------------------------------------------------------------
-  "components": {
-    "billing_api": {
-      "path": "src/Billing",
-      "repo": "api_billing",
-      "role": "billing HTTP API"
-    },
-    // A second component in the same repository demonstrates why components
-    // are a separate scope axis rather than aliases for repositories.
-    "billing_worker": {
-      "path": "src/Worker",
-      "repo": "api_billing",
-      "role": "asynchronous billing worker",
-      "depends_on": ["billing_api"]
-    },
-    "billing_front": {
-      "path": "src",
-      "repo": "front_billing",
-      "role": "billing web application",
-      "depends_on": ["billing_api"]
-    }
-  },
-
-  // ---------------------------------------------------------------------------
   // Environments: logical targets only (technical-considerations 1.6)
   // ---------------------------------------------------------------------------
   // Environment ids are free-form map keys; the suggested (not enforced)
@@ -270,18 +245,18 @@
     "local": {
       "label": "Local development",
       "url": "http://localhost:8080",
-      "component": "billing_api"
+      "repo": "api_billing"
     },
     "preprod": {
       "label": "Preprod (staging)",
       "url": "https://preprod.shop.acme.example",
-      "component": "billing_api",
+      "repo": "api_billing",
       "note": "Deployment target for integration testing. Use declared capsules for logs and data access."
     },
     "prod": {
       "label": "Production",
       "url": "https://shop.acme.example",
-      "component": "billing_api",
+      "repo": "api_billing",
       "note": "Production operations are restricted by the rules below."
     }
   },
@@ -325,7 +300,7 @@
       "label": "Run one read-only SQL query against the preprod billing database",
       "type": "database-query",
       "environment": "preprod",
-      "component": "billing_api",
+      "repo": "api_billing",
       // Optional informational pointer to an analogous external MCP tool.
       // AI Manager neither dispatches to it nor applies capsule guarantees to
       // it; `aimanager run` always executes `command`.
@@ -347,7 +322,7 @@
     "test-api-billing": {
       "label": "Run the billing API test suite",
       "type": "test",
-      "component": "billing_api",
+      "repo": "api_billing",
       "cwd": "www/api_billing",
       "command": "make test",
       "timeout_seconds": 900
@@ -356,7 +331,7 @@
       "label": "Read the last 200 local billing API log lines",
       "type": "logs",
       "environment": "local",
-      "component": "billing_api",
+      "repo": "api_billing",
       "cwd": "www/api_billing",
       "access": "read-only",
       "command": "docker compose logs --tail=200 app"
@@ -369,13 +344,11 @@
   // Each entry declares exactly one location field: "path" (local, relative
   // to the directory containing this manifest), "url" (remote page or space),
   // or "repository_url" (remote repository holding documentation). The
-  // optional scope is either "repo" or "component", never both. "repo" always
-  // names a declared galaxy member and never carries a URL; a component
-  // implies its owner repo.
+  // optional "repo" scope names a declared galaxy member and never carries a URL.
   "docs": {
     "functional": {
       "path": "doc/functional",
-      "component": "billing_api",
+      "repo": "api_billing",
       "label": "Functional specifications (markdown, versioned with the galaxy)"
     },
     "wiki": {

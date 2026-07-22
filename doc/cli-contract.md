@@ -66,11 +66,9 @@ aimanager get ticket-route --id <ticket-id> [--source <source-id>] [--manifest <
 aimanager get hosting --role <role> --repo <repo-id> [--instance <instance-id>] [--manifest <path>] [--json]
 aimanager get repo (--id <repo-id> | --path <path> | --current) [--with-dependencies] [--manifest <path>] [--json]
 aimanager list repos [--manifest <path>] [--json]
-aimanager get component (--id <component-id> | --path <path> | --current) [--with-dependencies] [--manifest <path>] [--json]
-aimanager list components [--repo <repo-id>] [--manifest <path>] [--json]
 aimanager get environment --id <environment-id> [--manifest <path>] [--json]
 aimanager get capsule --id <capsule-id> [--manifest <path>] [--json]
-aimanager list capsules [--repo <repo-id>] [--component <component-id>] [--env <environment-id>] [--type <type>] [--manifest <path>] [--json]
+aimanager list capsules [--repo <repo-id>] [--env <environment-id>] [--type <type>] [--manifest <path>] [--json]
 aimanager get docs [--id <docs-id>] [--manifest <path>] [--json]
 aimanager get rules [--manifest <path>] [--json]
 ```
@@ -90,9 +88,9 @@ path does not need to exist. The CLI resolves it lexically to a normalized path
 relative to the manifest directory and rejects a path outside that directory.
 Manifest paths use `/` separators on every platform; backslashes are invalid.
 `--current` uses the process cwd. Repo candidates are declaration paths that
-contain the resolved path on a complete path-segment boundary. Component
-candidates use `repo.path/component.path`. The longest candidate wins; an
-equal-length tie is an ambiguity error (exit 5) that lists candidate ids.
+contain the resolved path on a complete path-segment boundary. The longest
+candidate wins; an equal-length tie is an ambiguity error (exit 5) that lists
+candidate ids.
 
 `get capsule` returns the declaration, including its literal command template
 and optional MCP hint, but never local values or a resolved command. The MCP
@@ -100,13 +98,12 @@ hint is informational metadata for an external tool skill; it is not an
 alternate `aimanager run` backend and inherits none of the capsule runner's
 timeout, output-limit, or scrubbing guarantees.
 `list capsules` returns compact
-metadata only: id, label, type, effective repo, component, environment, MCP
-server/tool, and access. A component implies its owner repo; a capsule that
-names only an environment inherits that environment's scope for filtering.
+metadata only: id, label, type, repo, environment, MCP server/tool, and access.
+A capsule that names only an environment inherits that environment's repo for filtering.
 Filters combine with AND semantics.
 
 Every scoped result includes its `id`, its source section, its relevant
-`access`, `note`, `repo`, `component`, `environment`, `auth` variable *names*,
+`access`, `note`, `repo`, `environment`, `auth` variable *names*,
 and tool `skill` when those facts exist. It never expands an environment-variable
 value.
 

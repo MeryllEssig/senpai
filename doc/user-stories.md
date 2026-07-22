@@ -5,7 +5,7 @@ Format: **As** (who), **I want** (what), **so that** (why).
 ## Epic 1 - Declare project context (the manifest)
 
 **US-1.1 - Declare external tools in one place**
-As a developer, I want a single declarative manifest file in my project describing its external ecosystem (trackers, code hosting, repositories, components, environments, documentation, and executable capsules), so that any AI agent I use knows how to act without me re-explaining in every session.
+As a developer, I want a single declarative manifest file in my project describing its external ecosystem (trackers, code hosting, repositories, environments, documentation, and executable capsules), so that any AI agent I use knows how to act without me re-explaining in every session.
 
 **US-1.2 - Comment the manifest**
 As a developer, I want the manifest to support comments (JSONC), so that I can document inline what each entry is and why it exists, for teammates and for the AI.
@@ -65,10 +65,7 @@ As a developer who just cloned a project that declares capsules, I want `aimanag
 As a developer whose tracker is an in-house tool or needs a house workflow, I want an optional `skill` field on a source or hosting instance that overrides the default type-to-skill mapping, so that the agent drives that source with my custom skill when it is available and falls back to its declared coordinates and note when it is not.
 
 **US-1.19 - Link a capsule to its project scope**
-As a developer on a galaxy or monorepo, I want a capsule to name an optional `repo` or `component`, plus an optional `environment`, so that the agent can discover the correct operation for the current service and target without guessing from naming conventions. A component implies its owning repository; redundant scopes are rejected.
-
-**US-1.20 - Describe monorepo components**
-As a developer whose repository contains several deployable or operational components, I want to declare components independently from Git repositories, so that an AI can distinguish their paths, roles, and dependencies even when they share one repository.
+As a developer on a galaxy or monorepo, I want a capsule to name an optional `repo`, plus an optional `environment`, so that the agent can discover the correct operation for the current repository and target without guessing from naming conventions.
 
 ## Epic 2 - Query the context (the CLI)
 
@@ -111,7 +108,7 @@ As a user, I want the agent to run the CLI from the session's launch directory a
 ## Epic 4 - Set up and maintain (management skills)
 
 **US-4.1 - Guided setup**
-As a user, I want a setup skill that interviews me about where my project's information lives and which bounded operations should be exposed (trackers, repos, components, environments, docs, tests, logs, data queries, exports, and setup commands), lets me describe complex cases in detail, and writes the manifest for me, so that setup requires no knowledge of the schema.
+As a user, I want a setup skill that interviews me about where my project's information lives and which bounded operations should be exposed (trackers, repos, environments, docs, tests, logs, data queries, exports, and setup commands), lets me describe complex cases in detail, and writes the manifest for me, so that setup requires no knowledge of the schema.
 
 **US-4.2 - Prior analysis of the folder**
 As a user, I want the setup skill to study the current folder first to assess the project's complexity (single repo, galaxy of repos, plain folder), so that the interview is informed and shorter.

@@ -98,17 +98,10 @@ function assertReference(manifest) {
   assert(manifest.$schema === "https://aimanager.dev/schema/v1/aimanager.schema.json", "reference manifest must declare the v1 schema URI");
 
   const repoIds = new Set(Object.keys(manifest.repos ?? {}));
-  const componentIds = new Set(Object.keys(manifest.components ?? {}));
   const environmentIds = new Set(Object.keys(manifest.environments ?? {}));
   const hostingIds = new Set(Object.keys(manifest.code_hosting?.instances ?? {}));
   const repos = manifest.repos ?? {};
-  const components = manifest.components ?? {};
   const repoPaths = new Set();
-  const componentPaths = new Set();
-
-  function effectiveRepo(scope) {
-    return scope.component ? components[scope.component]?.repo : scope.repo;
-  }
 
   for (const [id, repo] of Object.entries(manifest.repos ?? {})) {
     assertRelativePath(repo.path, `repo ${id} path`);
@@ -119,33 +112,20 @@ function assertReference(manifest) {
   }
   assertAcyclic(repos, "repo");
 
-  for (const [id, component] of Object.entries(manifest.components ?? {})) {
-    assert(repoIds.has(component.repo), `component ${id} names unknown repo ${component.repo}`);
-    assertRelativePath(component.path, `component ${id} path`);
-    const fullPath = posix.join(repos[component.repo].path, component.path);
-    assert(!componentPaths.has(fullPath), `component ${id} duplicates path ${fullPath}`);
-    componentPaths.add(fullPath);
-    for (const dependency of component.depends_on ?? []) assert(componentIds.has(dependency), `component ${id} depends on unknown component ${dependency}`);
-  }
-  assertAcyclic(components, "component");
-
   for (const [id, environment] of Object.entries(manifest.environments ?? {})) {
     if (environment.repo) assert(repoIds.has(environment.repo), `environment ${id} names unknown repo ${environment.repo}`);
-    if (environment.component) assert(componentIds.has(environment.component), `environment ${id} names unknown component ${environment.component}`);
   }
 
   for (const [id, capsule] of Object.entries(manifest.capsules ?? {})) {
     assert(typeof capsule.label === "string" && capsule.label.length > 0, `capsule ${id} needs a label`);
     if (capsule.repo) assert(repoIds.has(capsule.repo), `capsule ${id} names unknown repo ${capsule.repo}`);
-    if (capsule.component) assert(componentIds.has(capsule.component), `capsule ${id} names unknown component ${capsule.component}`);
     if (capsule.environment) assert(environmentIds.has(capsule.environment), `capsule ${id} names unknown environment ${capsule.environment}`);
     if (capsule.cwd) assertRelativePath(capsule.cwd, `capsule ${id} cwd`);
     if (capsule.environment) {
       const environment = manifest.environments[capsule.environment];
-      const capsuleRepo = effectiveRepo(capsule);
-      const environmentRepo = effectiveRepo(environment);
+      const capsuleRepo = capsule.repo;
+      const environmentRepo = environment.repo;
       if (capsuleRepo && environmentRepo) assert(capsuleRepo === environmentRepo, `capsule ${id} scope conflicts with environment ${capsule.environment}`);
-      if (capsule.component && environment.component) assert(capsule.component === environment.component, `capsule ${id} component conflicts with environment ${capsule.environment}`);
     }
     if (capsule.timeout_seconds !== undefined) assert(Number.isInteger(capsule.timeout_seconds) && capsule.timeout_seconds > 0, `capsule ${id} needs a positive timeout_seconds`);
     if (capsule.max_output_bytes !== undefined) assert(Number.isInteger(capsule.max_output_bytes) && capsule.max_output_bytes > 0, `capsule ${id} needs a positive max_output_bytes`);
@@ -155,7 +135,6 @@ function assertReference(manifest) {
     const locations = [docs.path, docs.url, docs.repository_url].filter(Boolean);
     assert(locations.length === 1, `docs ${id} must have exactly one location`);
     assert(!Object.hasOwn(docs, "repo") || repoIds.has(docs.repo), `docs ${id} repo must be a declared repo id, never a URL`);
-    assert(!Object.hasOwn(docs, "component") || componentIds.has(docs.component), `docs ${id} component must be a declared component id`);
     if (docs.path) assertRelativePath(docs.path, `docs ${id} path`);
   }
 }

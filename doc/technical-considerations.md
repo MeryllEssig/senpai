@@ -121,8 +121,6 @@ Manifest support:
 - **Orchestration model (decided).** AI Manager provides declared facts; the agent derives the actions. The manifest carries enough structure (members, dependencies, hosting instances and their roles, trackers) for the agent to understand by itself what a cross-repo request implies. Example: the user modified two repos of the galaxy and asks to "create the MRs"; the agent creates one merge request per modified repo, each on the right instance (see 1.5). No orchestration engine, no scripted actions.
 - **Composition (decided).** A sub-repo may carry its own manifest, but manifests never compose: the nearest one to the execution directory wins in full (see 1.2).
 
-**Components inside repositories (decided 2026-07-22).** A repository and a deployable or operational component are different axes. Monorepos may declare a top-level `components` map whose entries carry a normalized POSIX `path` relative to their owning repository, a `repo` id, a free-form `role`, and optional `depends_on` component ids. Capsules, environments, and documentation may name a component so the agent can distinguish services that share one Git repository. Component paths may be nested; path lookup compares the combined `repo.path/component.path`, and the most specific matching path owns a file.
-
 ### 1.5 Code hosting: synchronized instances with roles
 
 A repo is not always hosted in one place. Real case: two synchronized GitLab instances, where merge requests are opened and test pipelines run on the first, while deployment pipelines are viewed and triggered on the second. The agent must know which instance serves which operation.
@@ -163,7 +161,7 @@ A repo is not always hosted in one place. Real case: two synchronized GitLab ins
 
 The manifest separates passive project context from executable operations:
 
-- `environments` names logical targets such as `dev`, `preprod`, and `prod`. Each entry carries a label, optional URL, optional repository or component association, and an LLM-facing note. It does not contain SSH or log commands.
+- `environments` names logical targets such as `dev`, `preprod`, and `prod`. Each entry carries a label, optional URL, optional repository association, and an LLM-facing note. It does not contain SSH or log commands.
 - `docs` points to a local path, remote URL, or documentation repository. Reading local or public documentation does not require a project command.
 - `trackers` and `code_hosting` are complex external platforms driven by their shipped or custom skills (see 3.1).
 - `capsules` are the only abstraction for bounded project commands AI Manager executes. Reading logs, querying a database, writing a CSV, running tests, starting detached services, and performing setup are all capsules (see 1.10). Rich external platforms such as trackers and code hosts remain driven by skills.
@@ -173,12 +171,10 @@ There is deliberately no parallel resource inventory or second command section. 
 Environment ids and capsule `type` values are free-form strings. Suggested environment ids are `dev`, `preprod`, and `prod`; suggested capsule types include `test`, `build`, `setup`, `logs`, `database-query`, `csv-read`, `csv-write`, and `deploy`. The CLI treats these as filtering metadata rather than closed behavior enums.
 
 **Scope coherence.** An environment, capsule, or documentation entry may name
-either a `repo` or a `component`, never both: the component already implies its
-owner repo. Scoped queries expose that effective repo. A capsule that names an
-environment and a direct scope must agree with the environment's effective
-repo and, when both name components, with its component. A capsule with no
-direct scope inherits its environment's scope for discovery. These are
-validation errors rather than precedence rules.
+a `repo`. A capsule that names both an environment and a repo must agree with
+the environment's repo. A capsule with no direct scope inherits its
+environment's repo for discovery. Conflicts are validation errors rather than
+precedence rules.
 
 ### 1.7 Secrets
 
@@ -234,9 +230,9 @@ A **capsule** is a bounded, non-interactive project command that **AI Manager ex
 - **Capsules requiring no local values are first-class.** A capsule may have no placeholders, or only agent-supplied placeholders, and may omit `supplied` when the template has none. It requires no entry in the local values file.
 - **Private templates remain transcript-safe.** When non-supplied placeholders exist, AI Manager reads their values inside its own process, resolves the template, runs it, and returns the declared template plus scrubbed stdout/stderr. The resolved command line never enters the agent transcript.
 
-- **The committed manifest holds the complete operation declaration.** Each capsule has a human-readable `label`, a `command` template, optional `type`, `cwd`, `repo`, `component`, `environment`, `mcp`, `access`, and `note`, plus optional `{variable}` placeholders.
+- **The committed manifest holds the complete operation declaration.** Each capsule has a human-readable `label`, a `command` template, optional `type`, `cwd`, `repo`, `environment`, `mcp`, `access`, and `note`, plus optional `{variable}` placeholders.
   - `cwd` is a normalized POSIX path relative to the manifest directory and may not escape it. `/` is the separator on every platform and backslashes are invalid. `.` names the manifest directory; absolute paths, empty segments, `.` segments, and `..` segments are invalid. AI Manager sets the child working directory itself.
-  - A capsule may name `repo` or `component`, never both, plus an `environment`. These are validated discovery metadata governed by the scope-coherence rule in 1.6; they do not alter the command.
+  - A capsule may name a `repo` plus an `environment`. These are validated discovery metadata governed by the scope-coherence rule in 1.6; they do not alter the command.
   - `mcp` is optional informational metadata `{ server, tool? }` naming an analogous capability exposed by an already configured MCP server. AI Manager does not dispatch to it, install it, assert argument equivalence, or apply capsule guarantees to it. The usage skill only surfaces the hint; a separate external-tool skill, when available, defines whether and how to use that tool. `aimanager run` always executes `command`.
   - **Committed / local boundary rule.** Whatever the author writes **literally** in the template is committed; whatever they turn into a `{variable}` placeholder is filled from elsewhere. The author draws the private/shared line field by field simply by this choice.
   - **Who fills each `{variable}`.** Variables declared in optional `supplied` are filled by the agent at call time. All other placeholders are filled from the local values file. Omitting `supplied` is equivalent to `[]`.
@@ -291,15 +287,14 @@ A **capsule** is a bounded, non-interactive project command that **AI Manager ex
 The single entry point between manifests and agents. Responsibilities:
 
 - **resolve**: locate the manifest from the cwd (walk-up). If none is found, fail with an explanatory error (see 1.2).
-- **query**: return the slice of context relevant to a stated need ("log capsules for prod", "tracker for time logging", "repo or component owning this path", "rules matching database"), not the whole file. Exposed as strict `get` and `list` subcommands for testability. A fuzzy `match` helper remains unnecessary because the consumer is already an LLM.
+- **query**: return the slice of context relevant to a stated need ("log capsules for prod", "tracker for time logging", "repo owning this path", "rules matching database"), not the whole file. Exposed as strict `get` and `list` subcommands for testability. A fuzzy `match` helper remains unnecessary because the consumer is already an LLM.
 - **summary** (decided 2026-07-17, promoted from "possibly"): a compact inventory of what THIS project declares - sections present, ids, roles, capsules, tool skills to load - in a few dozen tokens. It is the first command the usage skill runs; progressive discovery applies to the CLI, not only to skills.
 - **init**: scaffold the local capsule-values file (`.aimanager/capsules.local.json`) from the manifest's capsules - one stub per non-supplied `{variable}` (see 1.10). Capsules with no local values create no stub.
 - **validate**: syntax, schema version, and referential coherence: declared ids
   are unique; repo paths are relative, normalized, and distinct; nested repo
-  boundaries are allowed and path lookup uses the longest match; repo and
-  component `depends_on` targets exist and form no cycle; hosting ids exist;
-  component owners and capsule/docs/environment repo, component, and environment
-  references exist; repeated scope is forbidden and capsule/environment scope
+  boundaries are allowed and path lookup uses the longest match; repo
+  `depends_on` targets exist and form no cycle; hosting ids exist;
+  capsule/docs/environment repo and environment references exist; capsule/environment scope
   is coherent; declared paths are normalized POSIX paths and capsule cwd paths
   stay inside the manifest directory. The local scope also checks
   **capsule field correspondence** and the syntax of `$ENV` references, but
@@ -332,7 +327,7 @@ stable enough to make the trackers-first vertical slice independently testable.
 ### 3.1 Usage skill
 
 - **Trigger**: manually, or automatically when the user's question requires external data, documentation, or a declared project operation. The skill description must be written so ecosystems with model-driven skill selection activate it on such questions. Where an ecosystem has no auto-trigger mechanism, the fallback is manual invocation or a short pointer in `AGENTS.md`.
-- **Flow**: run `summary` **from the session's launch directory** (see 1.2: if resolution fails, stop and tell the user; never `cd` around hunting for a manifest) -> query the relevant repo, component, capsule, tracker, hosting, docs, environment, or rules slice -> act -> answer.
+- **Flow**: run `summary` **from the session's launch directory** (see 1.2: if resolution fails, stop and tell the user; never `cd` around hunting for a manifest) -> query the relevant repo, capsule, tracker, hosting, docs, environment, or rules slice -> act -> answer.
 - **Built-in guardrail**: if an action requires an external CLI the agent cannot authenticate to without reading secret values itself, it stops entirely and asks the user how to proceed (see 1.7). If a command was attempted, the agent diagnoses the failure from its scrubbed error output; `doctor` does not probe authentication.
 - **Manifest evolution feedback (decided).** When the skill hits a gap (a needed capsule or fact the manifest does not declare), it **proposes a concrete manifest edit for the user to accept and never applies one silently**. The user stays in control of what the manifest gains.
 - **Progressive discovery**: the always-loaded surface is a short description plus the instruction to call the CLI. Everything else lives in scoped CLI output or deeper skill references loaded only when needed.
@@ -346,7 +341,7 @@ stable enough to make the trackers-first vertical slice independently testable.
 A guided, didactic process to bootstrap a manifest in any folder (repo or not):
 
 1. **Analyze first.** Inspect the current folder: single repo, multi-repo galaxy, plain directory; detect hints (`.git`, CI configs, docker-compose services, existing docs folders) to pre-fill the interview.
-2. **Interview.** Ask where project information lives and which bounded operations should be exposed: trackers, repos, components, environments, documentation, tests, builds, setup, logs, data queries, exports, and deployments. Never read secret values; ask only for placeholder names and where the user will configure them.
+2. **Interview.** Ask where project information lives and which bounded operations should be exposed: trackers, repos, environments, documentation, tests, builds, setup, logs, data queries, exports, and deployments. Never read secret values; ask only for placeholder names and where the user will configure them.
 3. **Write and validate** the manifest, with comments explaining each section.
 4. **Offer tool assistance.** Propose installing or configuring external CLIs the manifest relies on (`glab`, `gh`, a Jira CLI), with the user's consent. Redmine needs no install: its shipped skill drives the REST API directly through embedded scripts (3.1).
 5. **Explain.** State what was created, what works now, and what the user must do (define the variable in their shell profile, restart the agent so it picks up the environment, restart a service). Didactic tone, in the user's language.
@@ -355,7 +350,7 @@ A guided, didactic process to bootstrap a manifest in any folder (repo or not):
 
 ### 3.3 Automation-discovery skill
 
-- Reviews the project and the manifest to suggest opportunities that are not yet covered: useful bounded capsules, repetitive manual steps, missing IF-THEN rules, docs, components, or tools worth installing.
+- Reviews the project and the manifest to suggest opportunities that are not yet covered: useful bounded capsules, repetitive manual steps, missing IF-THEN rules, docs, or tools worth installing.
 - **Scope (decided): manifest improvements plus clearly-flagged ecosystem-level automation suggestions (hooks, scheduled jobs), never applied automatically.** The two are kept visibly separate so the declarative core stays clean; the ecosystem suggestions are proposals the user implements, not actions the skill takes.
 - Output is a proposal list the user validates; accepted manifest items translate into manifest updates or setup actions.
 
@@ -366,7 +361,7 @@ A maintainer-only skill for the QA of AI Manager itself. It lives in this reposi
 - **Input**: a conversation transcript provided by the maintainer, in the format of the ecosystem that produced it (formats differ per agent; identifying the ecosystem is the skill's first step).
 - **Detection**: it walks the conversation and flags every inefficiency, including at least: failed or retried commands; workarounds invented because a declared fact was missing or wrong; questions to the user that the manifest should have answered; the whole manifest dumped where a scoped query would have done; wrong targets (ticket in the wrong tracker, time booked on the wrong source, merge request on the wrong instance, wrong environment); authentication dead-ends; ignored rules or guardrails.
 - **Root-cause classification**: each finding is attributed to one of: (a) project-side, the manifest is wrong or incomplete at a specific spot; (b) AI Manager-side, a gap in the schema, the CLI output, a skill's wording, or a missing tool guidance note; (c) external, outside AI Manager's scope.
-- **Output**: a findings report with, for each finding, a concrete remediation proposal (a manifest edit, an AI Manager change naming the affected component, or a tool guidance note to add).
+- **Output**: a findings report with, for each finding, a concrete remediation proposal (a manifest edit, an AI Manager change naming the affected area, or a tool guidance note to add).
 - **Transcript handling (decided).** The skill is maintainer-only and run locally by the maintainer, who is responsible for their own usage. No anonymization is imposed by the skill; reports stay local. (An end-user-facing tool would need a different stance, but this skill is never shipped.)
 
 ### 3.5 Explanatory guidance (cross-cutting)

@@ -109,28 +109,15 @@
       "required": ["path"],
       "additionalProperties": false
     },
-    "component": {
-      "type": "object",
-      "properties": {
-        "path": { "$ref": "#/$defs/relativePath" },
-        "repo": { "$ref": "#/$defs/identifier" },
-        "role": { "type": "string", "minLength": 1 },
-        "depends_on": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } }
-      },
-      "required": ["path", "repo", "role"],
-      "additionalProperties": false
-    },
     "environment": {
       "type": "object",
       "properties": {
         "label": { "type": "string", "minLength": 1 },
         "url": { "type": "string", "format": "uri" },
         "repo": { "$ref": "#/$defs/identifier" },
-        "component": { "$ref": "#/$defs/identifier" },
         "note": { "type": "string" }
       },
       "required": ["label"],
-      "not": { "required": ["repo", "component"] },
       "additionalProperties": false
     },
     "mcp": {
@@ -152,7 +139,6 @@
         "cwd": { "$ref": "#/$defs/relativePath" },
         "environment": { "$ref": "#/$defs/identifier" },
         "repo": { "$ref": "#/$defs/identifier" },
-        "component": { "$ref": "#/$defs/identifier" },
         "mcp": { "$ref": "#/$defs/mcp" },
         "access": { "$ref": "#/$defs/access" },
         "note": { "type": "string" },
@@ -160,7 +146,6 @@
         "max_output_bytes": { "type": "integer", "minimum": 1, "maximum": 104857600, "default": 1048576 }
       },
       "required": ["label", "command"],
-      "not": { "required": ["repo", "component"] },
       "additionalProperties": false
     },
     "documentation": {
@@ -170,7 +155,6 @@
         "url": { "type": "string", "format": "uri" },
         "repository_url": { "type": "string", "format": "uri" },
         "repo": { "$ref": "#/$defs/identifier" },
-        "component": { "$ref": "#/$defs/identifier" },
         "label": { "type": "string", "minLength": 1 },
         "note": { "type": "string" }
       },
@@ -179,7 +163,6 @@
         { "required": ["url"], "not": { "anyOf": [{ "required": ["path"] }, { "required": ["repository_url"] }] } },
         { "required": ["repository_url"], "not": { "anyOf": [{ "required": ["path"] }, { "required": ["url"] }] } }
       ],
-      "not": { "required": ["repo", "component"] },
       "additionalProperties": false
     },
     "rule": {
@@ -210,7 +193,6 @@
           "additionalProperties": false
         },
         "repos": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/repo" } }, "additionalProperties": false },
-        "components": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/component" } }, "additionalProperties": false },
         "environments": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/environment" } }, "additionalProperties": false },
         "capsules": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/capsule" } }, "additionalProperties": false },
         "docs": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/documentation" } }, "additionalProperties": false },
