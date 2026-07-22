@@ -15,20 +15,22 @@ Raised 2026-07-10. **Resolved 2026-07-13** as the **capsule** model (named
 entry is closed.
 
 - The resolution lives in [technical-considerations.md](technical-considerations.md)
-  **1.11 Capsules**, with the related updates to 1.6, 1.7, 1.10, 2.1, and 3.1,
+  **1.10 Capsules**, with the related updates to 1.6, 1.7, 2.1, and 3.1,
   and a worked example in the [reference manifest](reference-manifest.jsonc)
   (a `capsules` block plus the shape of the never-committed
   `.aimanager/capsules.local.json` values file).
-- Shape of the resolution: a capsule is a one-shot command AI Manager runs in
-  its own process to keep a secret out of the agent's transcript. The manifest
+- Shape of the resolution: a capsule is a bounded, non-interactive command AI
+  Manager runs in its own process. Commands requiring no local values and private
+  templates share this one primitive. For a private template, the manifest
   holds the `command` template; a gitignored local values file holds the value
   of each non-supplied `{variable}` (a literal or a `$ENV` reference); the agent
   fills `supplied` variables at call time. This settles the crux question (real
   secret values may live in the local values file, never in the manifest) and
   the local `doctor` / `validate` cross-file checks.
-- The two points left open in 2026-07-13 were closed on 2026-07-17 (see 1.11):
+- The two points left open in 2026-07-13 were closed on 2026-07-17 (see 1.10):
   output scrubbing (literal replacement of resolved values in stdout and
   stderr) and the final name ("capsule"). The execution verb was simplified on
   2026-07-20 to `aimanager run`, which also returns the declared template. The
-  broader env-var-sprawl / bulk variable-injection concern is not solved by
-  capsules and can be reopened separately if it resurfaces.
+  2026-07-22 decision made capsules the sole bounded project-operation abstraction
+  before implementation. Interactive and unbounded commands remain explicitly
+  unsupported.

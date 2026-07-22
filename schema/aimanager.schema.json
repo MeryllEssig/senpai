@@ -13,6 +13,23 @@
       "type": "string",
       "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
     },
+    "relativePath": {
+      "description": "A normalized POSIX path relative to the manifest directory, using forward slashes only. A single dot names the manifest directory itself.",
+      "anyOf": [
+        { "const": "." },
+        {
+          "type": "string",
+          "pattern": "^[^/\\\\]+(/[^/\\\\]+)*$",
+          "not": { "pattern": "(^|/)\\.\\.?(/|$)" }
+        }
+      ]
+    },
+    "capsuleParameter": {
+      "allOf": [
+        { "$ref": "#/$defs/identifier" },
+        { "not": { "enum": ["help", "json", "manifest", "version"] } }
+      ]
+    },
     "access": {
       "type": "string",
       "enum": ["read-only"],
@@ -80,7 +97,7 @@
     "repo": {
       "type": "object",
       "properties": {
-        "path": { "type": "string", "minLength": 1, "not": { "pattern": "(^/|(^|/)\\.\\.(/|$))" } },
+        "path": { "$ref": "#/$defs/relativePath" },
         "role": { "type": "string", "minLength": 1 },
         "depends_on": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } },
         "hosting": {
@@ -92,34 +109,15 @@
       "required": ["path"],
       "additionalProperties": false
     },
-    "ssh": {
+    "component": {
       "type": "object",
       "properties": {
-        "host": { "type": "string", "minLength": 1 },
-        "user": { "type": "string", "minLength": 1 },
-        "jump_host": { "type": "string", "minLength": 1 },
-        "access": { "$ref": "#/$defs/access" },
+        "path": { "$ref": "#/$defs/relativePath" },
         "repo": { "$ref": "#/$defs/identifier" },
-        "note": { "type": "string" }
+        "role": { "type": "string", "minLength": 1 },
+        "depends_on": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } }
       },
-      "required": ["host"],
-      "additionalProperties": false
-    },
-    "logs": {
-      "type": "object",
-      "properties": {
-        "transport": { "type": "string", "enum": ["ssh", "file"] },
-        "journal_unit": { "type": "string", "minLength": 1 },
-        "path": { "type": "string", "minLength": 1 },
-        "access": { "$ref": "#/$defs/access" },
-        "repo": { "$ref": "#/$defs/identifier" },
-        "note": { "type": "string" }
-      },
-      "required": ["transport"],
-      "allOf": [
-        { "if": { "properties": { "transport": { "const": "ssh" } } }, "then": { "required": ["journal_unit"] } },
-        { "if": { "properties": { "transport": { "const": "file" } } }, "then": { "required": ["path"] } }
-      ],
+      "required": ["path", "repo", "role"],
       "additionalProperties": false
     },
     "environment": {
@@ -128,78 +126,51 @@
         "label": { "type": "string", "minLength": 1 },
         "url": { "type": "string", "format": "uri" },
         "repo": { "$ref": "#/$defs/identifier" },
-        "ssh": { "$ref": "#/$defs/ssh" },
-        "logs": { "$ref": "#/$defs/logs" },
+        "component": { "$ref": "#/$defs/identifier" },
         "note": { "type": "string" }
       },
       "required": ["label"],
+      "not": { "required": ["repo", "component"] },
       "additionalProperties": false
     },
     "mcp": {
       "type": "object",
-      "properties": { "server": { "type": "string", "minLength": 1 } },
+      "properties": {
+        "server": { "type": "string", "minLength": 1 },
+        "tool": { "type": "string", "minLength": 1 }
+      },
       "required": ["server"],
       "additionalProperties": false
-    },
-    "dataStore": {
-      "type": "object",
-      "properties": {
-        "type": { "type": "string", "minLength": 1 },
-        "environment": { "$ref": "#/$defs/identifier" },
-        "connector": { "$ref": "#/$defs/identifier" },
-        "repo": { "$ref": "#/$defs/identifier" },
-        "access": { "$ref": "#/$defs/access" },
-        "note": { "type": "string" },
-        "mcp": { "$ref": "#/$defs/mcp" },
-        "host": { "type": "string", "minLength": 1 },
-        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "endpoint": { "type": "string", "format": "uri" },
-        "engine": { "type": "string", "minLength": 1 },
-        "database": { "type": ["string", "integer"], "minLength": 1 },
-        "db": { "type": "integer", "minimum": 0 },
-        "index": { "type": "string", "minLength": 1 },
-        "core": { "type": "string", "minLength": 1 },
-        "user": { "type": "string", "minLength": 1 }
-      },
-      "patternProperties": {
-        "^[A-Za-z][A-Za-z0-9_]*_env$": { "$ref": "#/$defs/environmentVariable" }
-      },
-      "required": ["type", "environment"],
-      "allOf": [
-        { "if": { "properties": { "type": { "const": "database" } } }, "then": { "required": ["engine", "host", "port", "database"] } },
-        { "if": { "properties": { "type": { "const": "elasticsearch" } } }, "then": { "required": ["endpoint", "index"] } },
-        { "if": { "properties": { "type": { "const": "solr" } } }, "then": { "required": ["endpoint", "core"] } },
-        { "if": { "properties": { "type": { "const": "redis" } } }, "then": { "required": ["endpoint", "db"] } },
-        {
-          "if": { "properties": { "type": { "not": { "enum": ["database", "elasticsearch", "solr", "redis"] } } } },
-          "then": { "anyOf": [{ "required": ["endpoint"] }, { "required": ["host"] }] }
-        }
-      ],
-      "additionalProperties": true
     },
     "capsule": {
       "type": "object",
       "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
         "command": { "type": "string", "minLength": 1 },
-        "supplied": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } },
+        "supplied": { "type": "array", "uniqueItems": true, "default": [], "items": { "$ref": "#/$defs/capsuleParameter" } },
+        "cwd": { "$ref": "#/$defs/relativePath" },
         "environment": { "$ref": "#/$defs/identifier" },
         "repo": { "$ref": "#/$defs/identifier" },
+        "component": { "$ref": "#/$defs/identifier" },
+        "mcp": { "$ref": "#/$defs/mcp" },
         "access": { "$ref": "#/$defs/access" },
-        "engine": { "type": "string", "minLength": 1 },
         "note": { "type": "string" },
         "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 3600, "default": 30 },
         "max_output_bytes": { "type": "integer", "minimum": 1, "maximum": 104857600, "default": 1048576 }
       },
-      "required": ["command", "supplied"],
+      "required": ["label", "command"],
+      "not": { "required": ["repo", "component"] },
       "additionalProperties": false
     },
     "documentation": {
       "type": "object",
       "properties": {
-        "path": { "type": "string", "minLength": 1, "not": { "pattern": "(^/|(^|/)\\.\\.(/|$))" } },
+        "path": { "$ref": "#/$defs/relativePath" },
         "url": { "type": "string", "format": "uri" },
         "repository_url": { "type": "string", "format": "uri" },
         "repo": { "$ref": "#/$defs/identifier" },
+        "component": { "$ref": "#/$defs/identifier" },
         "label": { "type": "string", "minLength": 1 },
         "note": { "type": "string" }
       },
@@ -208,15 +179,7 @@
         { "required": ["url"], "not": { "anyOf": [{ "required": ["path"] }, { "required": ["repository_url"] }] } },
         { "required": ["repository_url"], "not": { "anyOf": [{ "required": ["path"] }, { "required": ["url"] }] } }
       ],
-      "additionalProperties": false
-    },
-    "localCommand": {
-      "type": "object",
-      "properties": {
-        "run": { "type": "string", "minLength": 1 },
-        "label": { "type": "string", "minLength": 1 }
-      },
-      "required": ["run", "label"],
+      "not": { "required": ["repo", "component"] },
       "additionalProperties": false
     },
     "rule": {
@@ -247,11 +210,10 @@
           "additionalProperties": false
         },
         "repos": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/repo" } }, "additionalProperties": false },
+        "components": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/component" } }, "additionalProperties": false },
         "environments": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/environment" } }, "additionalProperties": false },
-        "data_stores": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/dataStore" } }, "additionalProperties": false },
         "capsules": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/capsule" } }, "additionalProperties": false },
         "docs": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/documentation" } }, "additionalProperties": false },
-        "local_commands": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/localCommand" } }, "additionalProperties": false },
         "rules": { "type": "array", "items": { "$ref": "#/$defs/rule" } }
       },
       "required": ["version", "project"],

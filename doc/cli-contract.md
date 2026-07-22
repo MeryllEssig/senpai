@@ -2,7 +2,7 @@
 
 This document fixes the public contract needed for the first vertical slice.
 It does not turn AI Manager into an orchestration engine: `get` commands only
-read the manifest and never contact a tracker, hosting service, or connector.
+read the manifest and never contact a tracker or hosting service.
 Only `run` executes a process, and it executes capsules only.
 
 ## Common behavior
@@ -52,9 +52,8 @@ aimanager summary [--manifest <absolute-path>] [--json]
 
 `resolve` returns the canonical absolute `manifest_path`, the directory that
 contains it, and the project name. `--from` defaults to the process cwd.
-`summary` returns only section names, declared ids, roles, capsule ids, and
-resolved tool-skill names. It never returns connector coordinates or command
-strings.
+`summary` returns only section names, declared ids, roles, capsule ids and
+types, and resolved tool-skill names. It never returns command strings.
 
 The usage skill calls `resolve` once from the launch directory, retains
 `manifest_path`, then supplies that path to every later command in the session.
@@ -65,12 +64,14 @@ The usage skill calls `resolve` once from the launch directory, retains
 aimanager get tracker --role <role> [--source <source-id>] [--manifest <path>] [--json]
 aimanager get ticket-route --id <ticket-id> [--source <source-id>] [--manifest <path>] [--json]
 aimanager get hosting --role <role> --repo <repo-id> [--instance <instance-id>] [--manifest <path>] [--json]
-aimanager get repo --id <repo-id> [--with-dependencies] [--manifest <path>] [--json]
-aimanager get connectors --repo <repo-id> [--manifest <path>] [--json]
-aimanager get logs --env <environment-id> [--manifest <path>] [--json]
-aimanager get data-store --id <store-id> [--manifest <path>] [--json]
+aimanager get repo (--id <repo-id> | --path <path> | --current) [--with-dependencies] [--manifest <path>] [--json]
+aimanager list repos [--manifest <path>] [--json]
+aimanager get component (--id <component-id> | --path <path> | --current) [--with-dependencies] [--manifest <path>] [--json]
+aimanager list components [--repo <repo-id>] [--manifest <path>] [--json]
+aimanager get environment --id <environment-id> [--manifest <path>] [--json]
+aimanager get capsule --id <capsule-id> [--manifest <path>] [--json]
+aimanager list capsules [--repo <repo-id>] [--component <component-id>] [--env <environment-id>] [--type <type>] [--manifest <path>] [--json]
 aimanager get docs [--id <docs-id>] [--manifest <path>] [--json]
-aimanager get local-command --id <command-id> [--manifest <path>] [--json]
 aimanager get rules [--manifest <path>] [--json]
 ```
 
@@ -84,9 +85,30 @@ that declaration actually holds the requested role. `get hosting` additionally
 requires that the selected instance occurs in the selected repo's `hosting`
 map.
 
+`--path` accepts an absolute path or a path relative to the process cwd; the
+path does not need to exist. The CLI resolves it lexically to a normalized path
+relative to the manifest directory and rejects a path outside that directory.
+Manifest paths use `/` separators on every platform; backslashes are invalid.
+`--current` uses the process cwd. Repo candidates are declaration paths that
+contain the resolved path on a complete path-segment boundary. Component
+candidates use `repo.path/component.path`. The longest candidate wins; an
+equal-length tie is an ambiguity error (exit 5) that lists candidate ids.
+
+`get capsule` returns the declaration, including its literal command template
+and optional MCP hint, but never local values or a resolved command. The MCP
+hint is informational metadata for an external tool skill; it is not an
+alternate `aimanager run` backend and inherits none of the capsule runner's
+timeout, output-limit, or scrubbing guarantees.
+`list capsules` returns compact
+metadata only: id, label, type, effective repo, component, environment, MCP
+server/tool, and access. A component implies its owner repo; a capsule that
+names only an environment inherits that environment's scope for filtering.
+Filters combine with AND semantics.
+
 Every scoped result includes its `id`, its source section, its relevant
-`access`, `note`, `repo`, `auth` variable *names*, and tool `skill` when those
-facts exist. It never expands an environment-variable value.
+`access`, `note`, `repo`, `component`, `environment`, `auth` variable *names*,
+and tool `skill` when those facts exist. It never expands an environment-variable
+value.
 
 ## Local setup and diagnostics
 
@@ -97,10 +119,13 @@ aimanager validate local [--manifest <path>] [--json]
 aimanager doctor [--manifest <path>] [--json]
 ```
 
-`init` is idempotent: it creates missing capsule-value stubs and the local
-ignore file, but never changes an existing value. `validate manifest` is
+`init` is idempotent: when at least one capsule has a non-supplied placeholder,
+it creates the values file, its ignore file, and the missing stubs, but never
+changes an existing value. With no such placeholder it creates neither local
+file. `validate manifest` is
 machine-independent and is the CI command. `validate local` additionally
-checks the locally stored capsule placeholders and `$ENV` reference syntax.
+checks the locally stored capsule placeholders and `$ENV` reference syntax; an
+absent values file is valid when no capsule needs one.
 `doctor` is a convenience aggregate for validating the resolved manifest,
 overlay, and local capsule configuration. It checks configuration only: it
 does not inspect environment-variable availability, installed skills, CLI
@@ -110,21 +135,30 @@ service.
 ## Capsule execution
 
 ```text
-aimanager run <capsule-id> --<supplied-name> <value> … [--manifest <path>] [--json]
+aimanager run <capsule-id> [--<supplied-name> <value> …] [--manifest <path>] [--json]
 ```
 
-`run` accepts only ids from the `capsules` section and never executes a
-`local_commands` entry.
+`run` accepts only ids from the `capsules` section. A capsule with no supplied
+parameters is invoked with its id alone.
 
-Every and only the names declared in `supplied` must occur once. The CLI rejects
+Every and only the names declared in `supplied` must occur once; omitted
+`supplied` is equivalent to an empty array. The CLI rejects
 unknown, missing, or repeated supplied names before it loads local values.
-Templates are parsed to argv before substitution; a placeholder may occur only
-as a complete argv element or as a documented inline credential fragment such
-as `-p{password}`. The validator rejects unmatched braces, undeclared supplied
-names, missing local names, empty local values, shell operators, and templates
-whose executable or argument count cannot be parsed deterministically.
+A template may contain zero placeholders. It is parsed to argv before
+substitution. Each argv element may contain at most one placeholder, optionally
+surrounded by literal prefix or suffix text (for example
+`--password={password}`); substitution changes that element's contents but can
+never create another argument. Each placeholder name occurs exactly once in a
+template. Placeholders are forbidden in the executable
+element. Supplied names may not be `help`, `json`, `manifest`, or `version`,
+which are reserved CLI options. The validator rejects unmatched braces,
+multiple placeholders in one element, undeclared supplied names, missing local
+names, empty local values, shell operators, and templates whose executable or
+argument count cannot be parsed deterministically.
 
-The child receives no shell. Its combined stdout/stderr is bounded and scrubbed
+The child receives no shell, stdin, or TTY. Its cwd is the manifest directory
+joined with the capsule's optional normalized `cwd`, defaulting to the manifest
+directory. Its combined stdout/stderr is bounded and scrubbed
 before return. Every result, successful or not, exposes the literal
 `command_template` from the manifest and never the resolved command line. In
 Markdown mode, the template is printed before the scrubbed process output. In

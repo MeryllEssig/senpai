@@ -2,7 +2,7 @@
 
 AI Manager is a **project-scoped, declarative context layer for AI coding agents**.
 
-Each project carries a single manifest file, `.aimanager.jsonc`, that declares everything an AI agent needs to interact with the project's ecosystem: ticket trackers, code hosting, environments and their logs, data stores, documentation locations, local commands, and rules mapping intents to skills.
+Each project carries a single manifest file, `.aimanager.jsonc`, that declares the context an AI agent needs to interact with the project's ecosystem: ticket trackers, code hosting, repositories and components, logical environments, documentation locations, bounded project-operation capsules, and rules mapping intents to capsules or external-tool skills.
 
 ## Documentation
 

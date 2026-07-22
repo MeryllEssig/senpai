@@ -5,7 +5,7 @@ Format: **As** (who), **I want** (what), **so that** (why).
 ## Epic 1 - Declare project context (the manifest)
 
 **US-1.1 - Declare external tools in one place**
-As a developer, I want a single declarative manifest file in my project describing its external ecosystem (trackers, code hosting, environments, logs, data stores, documentation), so that any AI agent I use knows how to reach them without me re-explaining in every session.
+As a developer, I want a single declarative manifest file in my project describing its external ecosystem (trackers, code hosting, repositories, components, environments, documentation, and executable capsules), so that any AI agent I use knows how to act without me re-explaining in every session.
 
 **US-1.2 - Comment the manifest**
 As a developer, I want the manifest to support comments (JSONC), so that I can document inline what each entry is and why it exists, for teammates and for the AI.
@@ -16,11 +16,11 @@ As a developer working for clients, I want to declare several trackers on one pr
 **US-1.4 - Route tracker actions by function across the lifecycle**
 As a developer whose trackers each play a different function (one authoritative for ticket details, one for booking time, one for hosting requests) and whose project changes tracker over its lifecycle (a dedicated project space during the build, then a shared general-maintenance space after go-live), I want each action routed to the right source by its declared role, with the lifecycle move being a one-line change to the relevant source's project space, so that reads, time bookings, and requests always land in the right place.
 
-**US-1.5 - Declare data sources**
-As a developer, I want to declare typed data-source connectors (SSH targets, preprod and prod log locations, databases, Elasticsearch, Solr, Redis, documentation locations in local or remote repositories), so that the AI knows how to fetch the data a request needs.
+**US-1.5 - Declare environments and documentation**
+As a developer, I want to declare the project's named environments and documentation locations, so that the AI understands where an operation applies and where to read the relevant project knowledge. Concrete operations such as reading logs, querying a database, or writing a CSV are capsules.
 
 **US-1.6 - Declare intent rules (IF-THEN)**
-As a developer, I want to declare rules such as "IF the task needs database access THEN use this skill", so that the AI picks the right approach by itself.
+As a developer, I want to declare rules such as "IF the task needs database access THEN run this capsule", so that the AI picks the right approach by itself.
 Constraint: the manifest stays purely declarative; it never installs the commands or skills it references.
 
 **US-1.7 - Cover a multi-repo galaxy**
@@ -39,38 +39,41 @@ As a developer whose repos live on two synchronized GitLab instances with differ
 As a developer whose external commands authenticate in different ways, I want tracker sources and code hosting instances to optionally declare an auth mode (pre-configured CLI, environment variables referenced by name, interactive login), so that when I allow it the AI drives the login or re-login process itself, and when I omit it the AI assumes the CLI is pre-configured and authentication stays entirely in my hands.
 Constraint: secret values in the manifest are forbidden in every mode; only references (variable names) and mode names may appear.
 
-**US-1.12 - Declare local commands**
-As a developer, I want to declare local commands the project relies on (for example a `docker compose` invocation to read logs or act on a service), so that the AI can act on the project locally, not only on external tools, and discover how through the CLI.
-Constraint: local commands are the manifest's one agent-run executable surface; the team vets committed commands like any other code, and personal commands belong in the gitignored local overlay. When a command must run from a specific directory, the label says so in prose (no `cwd` field).
+**US-1.12 - Declare bounded project operations**
+As a developer, I want to declare every bounded project command AI Manager should execute as a capsule, including commands requiring no local values such as tests or bounded log reads, so that the AI discovers and executes one consistent primitive through the CLI. Rich external platforms such as trackers and code hosts remain driven by skills.
+Constraint: capsules are non-interactive, have bounded output and a timeout, execute without a shell, and may use a structured working directory. Interactive shells, foreground servers, follow-mode logs, and other unbounded processes are unsupported.
 
 **US-1.13 - Onboard onto an existing manifest**
 As a developer joining a project that already carries a committed manifest, I want `init` to scaffold my capsule values and `validate local` or `doctor` to validate the resulting local configuration, so that configuration mistakes are caught without any secret being read.
 Constraint: these checks do not inspect whether environment variables or skills are installed, and do not verify remote connectivity, credential validity, or authorization. The agent diagnoses runtime failures from command errors.
 
 **US-1.14 - Keep personal settings out of the shared manifest**
-As a developer, I want a personal, gitignored overlay (`.aimanager.local.jsonc`) beside the committed manifest for my private paths, preferences, and personal auth or local-command overrides, so that my machine-specific choices never touch the file my teammates share.
+As a developer, I want a personal, gitignored overlay (`.aimanager.local.jsonc`) beside the committed manifest for my private paths, preferences, personal auth, and personal capsule overrides, so that my machine-specific choices never touch the file my teammates share.
 
-**US-1.15 - Mark a connector read-only**
-As a developer, I want to declare an optional structured `"access": "read-only"` marker on a connector or capsule (for example the prod database), so that the LLM receives a concise usage hint without mistaking it for an enforced permission.
+**US-1.15 - Mark a capsule read-only**
+As a developer, I want to declare an optional structured `"access": "read-only"` marker on a capsule (for example a production database query), so that the LLM receives a concise usage hint without mistaking it for an enforced permission.
 Constraint: `access` is advisory only. AI Manager returns it when present but never interprets or enforces it.
 
-**US-1.16 - Run a secret-bearing command without leaking the secret**
-As a developer whose database access needs a password, I want to declare a *capsule* - a `command` template in the committed manifest with `{variable}` placeholders, where the agent-supplied ones (like the SQL query) are marked `supplied` and the rest are filled from a never-committed local values file - so that `aimanager run` executes it in AI Manager's own process and returns the declared template plus scrubbed output, while the resolved command line (password included) never enters the agent's transcript.
+**US-1.16 - Run a templated command without leaking private values**
+As a developer whose database access needs a password, I want a capsule's `command` template to accept optional `{variable}` placeholders, where the agent-supplied ones (like the SQL query) are marked `supplied` and the rest are filled from a never-committed local values file, so that `aimanager run` executes it in AI Manager's own process and returns the declared template plus scrubbed output while the resolved private values never enter the agent's transcript.
 Constraint: the manifest holds no secret values; real values live only in the gitignored `.aimanager/capsules.local.json`, read only inside AI Manager's process.
 
 **US-1.17 - Scaffold my local capsule values on join**
-As a developer who just cloned a project that declares capsules, I want `aimanager init` to scaffold the local values file with one stub per non-supplied `{variable}`, and `validate local` or `doctor` to confirm every required entry exists and is structurally valid, so that I can complete my own setup out of band without any secret being transferred to me.
+As a developer who just cloned a project that declares capsules, I want `aimanager init` to scaffold the local values file with one stub per private or machine-local non-supplied `{variable}`, and `validate local` or `doctor` to confirm every required entry exists and is structurally valid, so that I can complete my own setup out of band without any secret being transferred to me. Shared non-secret coordinates belong literally in the committed command.
 
 **US-1.18 - Point a source at a custom skill**
-As a developer whose tracker is an in-house tool or needs a house workflow, I want an optional `skill` field on a source or hosting instance that overrides the default type-to-skill mapping, so that the agent drives that source with my custom skill when it is available and falls back to the generic connector shape when it is not.
+As a developer whose tracker is an in-house tool or needs a house workflow, I want an optional `skill` field on a source or hosting instance that overrides the default type-to-skill mapping, so that the agent drives that source with my custom skill when it is available and falls back to its declared coordinates and note when it is not.
 
-**US-1.19 - Link a connector to its galaxy member**
-As a developer on a galaxy where each service has its own logs and database, I want an optional `repo` field on a connector or environment naming the declared member it serves, so that the agent can answer "the logs of the billing service" without guessing from naming conventions.
+**US-1.19 - Link a capsule to its project scope**
+As a developer on a galaxy or monorepo, I want a capsule to name an optional `repo` or `component`, plus an optional `environment`, so that the agent can discover the correct operation for the current service and target without guessing from naming conventions. A component implies its owning repository; redundant scopes are rejected.
+
+**US-1.20 - Describe monorepo components**
+As a developer whose repository contains several deployable or operational components, I want to declare components independently from Git repositories, so that an AI can distinguish their paths, roles, and dependencies even when they share one repository.
 
 ## Epic 2 - Query the context (the CLI)
 
 **US-2.1 - Scoped answers, not dumps**
-As an AI agent, I want a CLI that parses the manifest and returns only the slice relevant to the current request (for example just the log access for prod), so that I answer the user without wasting tokens on irrelevant context.
+As an AI agent, I want a CLI that parses the manifest and returns only the slice relevant to the current request (for example the production log capsules), so that I answer the user without wasting tokens on irrelevant context.
 
 **US-2.2 - Validate the manifest**
 As a developer, I want the CLI to validate a manifest (syntax, schema, coherence), so that mistakes are caught when I edit it rather than mid-task.
@@ -108,7 +111,7 @@ As a user, I want the agent to run the CLI from the session's launch directory a
 ## Epic 4 - Set up and maintain (management skills)
 
 **US-4.1 - Guided setup**
-As a user, I want a setup skill that interviews me about where my project's information lives (trackers, repos, environments, data sources), lets me describe complex cases in detail, and writes the manifest for me, so that setup requires no knowledge of the schema.
+As a user, I want a setup skill that interviews me about where my project's information lives and which bounded operations should be exposed (trackers, repos, components, environments, docs, tests, logs, data queries, exports, and setup commands), lets me describe complex cases in detail, and writes the manifest for me, so that setup requires no knowledge of the schema.
 
 **US-4.2 - Prior analysis of the folder**
 As a user, I want the setup skill to study the current folder first to assess the project's complexity (single repo, galaxy of repos, plain folder), so that the interview is informed and shorter.
@@ -140,8 +143,8 @@ As a maintainer, I want everything in this project (code, docs, skills, schemas)
 **US-5.2 - User-language responses**
 As a user, I want runtime interactions to happen in my language with no default language assumed, so that the tool adapts to me and not the reverse.
 
-**US-5.3 - Tool-agnostic core, optional connectors**
-As a maintainer, I want the core to stay agnostic of any specific tracker or tool, with connectors provided only when necessary, so that the system survives tool churn.
+**US-5.3 - Tool-agnostic core**
+As a maintainer, I want the core to stay agnostic of any specific tracker or tool, with bounded project operations represented uniformly as capsules and complex platforms handled by optional skills, so that the system survives tool churn.
 
 **US-5.4 - Per-tool guidance, depth matched to model familiarity**
 As a user of external tools, I want the shipped per-tool skills to carry a strict minimum for CLIs the models already know well (`gh`, `glab`: the few non-obvious behaviors, not a full manual) and a full driving skill for tools they know less (Redmine, Jira: API endpoints, time logging, statuses - the Redmine skill embedding Python stdlib-only scripts for the REST API), so that the agent handles every tool properly while the core stays tool-agnostic.

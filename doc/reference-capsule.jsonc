@@ -2,14 +2,14 @@
 // .aimanager/capsules.local.json - REFERENCE EXAMPLE (capsule values)
 // =============================================================================
 // This file is the reference example for the LOCAL CAPSULE-VALUES file that
-// pairs with the manifest's "capsules" block (technical-considerations 1.11).
+// pairs with the manifest's "capsules" block (technical-considerations 1.10).
 // The real file is plain JSON named ".aimanager/capsules.local.json"; this
 // documented copy is JSONC so it can explain itself. The values below match the
 // "db-preprod" capsule declared in the golden manifest
 // (doc/reference-manifest.jsonc).
 //
 //   - doc/reference-manifest.jsonc    the committed manifest and its "capsules"
-//   - doc/technical-considerations.md field shapes (section 1.11)
+//   - doc/technical-considerations.md field shapes (section 1.10)
 //   - doc/goal.md                     why a secret value may live here
 //
 // What this file is:
@@ -21,17 +21,21 @@
 //     purpose: the overlay merges into the manifest and is agent-readable,
 //     while this file must never be read by the agent.
 //   - Scaffolded by "aimanager init": one stub per non-supplied {placeholder}
-//     found in the manifest's capsule templates. The developer fills the stubs
-//     themselves, out of band; AI Manager never transfers a value.
+//     found in the manifest's capsule templates. Capsules with no local values create no
+//     entry here; when no capsule requires local values, this file is not created.
+//     The developer fills the stubs themselves, out of band; AI Manager never
+//     transfers a value.
 //
-// The committed / local boundary (technical-considerations 1.11):
+// The committed / local boundary (technical-considerations 1.10):
 //   - Whatever the manifest author wrote LITERALLY in a "command" template is
 //     committed in the manifest. Every {placeholder} is filled from elsewhere.
 //   - Placeholders listed in the capsule's "supplied" are filled by the AGENT
 //     at call time (for "db-preprod" that is {query}); they are NOT in this
 //     file.
 //   - EVERY OTHER placeholder is filled here, by NAME, with a value that is
-//     either a literal string OR a "$ENV_VAR" reference.
+//     either a literal string OR a "$ENV_VAR" reference. Shared non-secret
+//     coordinates should stay literal in the committed command; local
+//     placeholders are for secrets or genuinely machine-local values.
 //
 // Each value, independently:
 //   - a literal string  -> the real value lives here (this is what softens the
@@ -46,28 +50,23 @@
 //   - "doctor": validates the manifest, overlay, and this local configuration
 //     together; it does not inspect the environment or any remote service.
 //
-// Execution (technical-considerations 1.11): argv-based, no shell - each value
-// substitutes as one atomic argument, so quotes or $(...) inside a value are
-// just data. Both stdout and stderr are scrubbed before returning to the
+// Execution (technical-considerations 1.10): argv-based, no shell - a value
+// substitutes inside one already parsed argument, so quotes or $(...) inside
+// it are just data. Both stdout and stderr are scrubbed before returning to the
 // agent: every resolved value below is replaced by its {name}.
 //
 // Run the capsule this file backs:
 //   aimanager run db-preprod --query "SELECT id FROM orders LIMIT 5"
 // The manifest template is:
-//   "mysql -h {host} -u {user} -p{password} {database} -e {query}"
+//   "mysql --host=db.preprod.acme.example --user=acme_ro --password={password} acme_shop --execute {query}"
 // Every run result displays this declared template, never its resolved form.
-// so the non-supplied placeholders filled below are: host, user, password,
-// database. {query} is supplied by the agent and is absent here on purpose.
+// The only non-supplied placeholder filled below is password. {query} is
+// supplied by the agent and is absent here on purpose. Host, user, and database
+// are shared coordinates committed in the manifest for immediate onboarding.
 // =============================================================================
 {
   // Keyed by capsule name, exactly as declared in the manifest's "capsules".
   "db-preprod": {
-    // Non-secret coordinates, kept out of the committed manifest by choice
-    // (the author made them {placeholders}); literal values are fine here.
-    "host": "db.preprod.acme.example",
-    "user": "acme_ro",
-    "database": "acme_shop",
-
     // The secret. Shown here as a "$ENV" reference, which keeps the value in
     // the environment; runtime resolution happens only inside "aimanager run".
     //

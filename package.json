@@ -1,0 +1,13 @@
+{
+  "name": "ai-manager-spec",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify": "node scripts/verify-reference.mjs"
+  },
+  "devDependencies": {
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1",
+    "shell-quote": "1.10.0"
+  }
+}

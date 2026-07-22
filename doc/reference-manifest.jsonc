@@ -7,21 +7,18 @@
 //
 //   - doc/goal.md                     what AI Manager is and is not
 //   - doc/user-stories.md             who needs what and why
-//   - doc/technical-considerations.md field shapes (sections 1.1 to 1.11)
+//   - doc/technical-considerations.md field shapes (sections 1.1 to 1.10)
 //   - doc/notes.md                    cross-cutting process notes
 //
 // The project below is entirely fictional: an "acme" client, example hosts,
 // billing/catalog repos. No real client, company, URL, or credential appears.
 //
 // Ground rules the format guarantees:
-//   - Declarative, with explicit exceptions. The manifest states what exists
-//     and how to reach it. Two executable surfaces exist, both explicit: the
-//     typed "local_commands" category, which the AGENT runs (team-shared
-//     entries live here, personal ones in the overlay; the team vets committed
-//     commands like any code - AI Manager ships no trust machinery); and
-//     "capsules" (technical-considerations 1.11), one-shot commands AI MANAGER
-//     runs itself to keep a secret out of the agent's transcript. No shell
-//     strings appear anywhere else, notably never in connector fields.
+//   - Capsules are the one executable surface. They are bounded,
+//     non-interactive commands AI MANAGER runs without a shell. A capsule may
+//     require no local values or may use private placeholders resolved inside
+//     AI Manager.
+//     No executable strings appear anywhere else in the manifest.
 //   - No secret values in THIS file. Credentials are referenced by environment
 //     variable NAME only (for example "password_env"), never by value. The one
 //     place a real secret value may sit is the never-committed local values
@@ -42,14 +39,14 @@
 //
 // Personal overlay: a gitignored .aimanager.local.jsonc placed beside this
 // file is deep-merged over it for private paths, preferences, and personal
-// auth or local_commands overrides (technical-considerations 1.9). A separate
+// auth or capsule overrides (technical-considerations 1.9). A separate
 // gitignored .aimanager/capsules.local.json (note: no dash in the directory)
-// holds the per-capsule values (technical-considerations 1.11); it sits
+// holds the per-capsule values (technical-considerations 1.10); it sits
 // outside the overlay because the overlay is agent-readable and this file
 // must never be. Flat siblings:
 //   .aimanager.jsonc            committed manifest (this file)
 //   .aimanager.local.jsonc      personal overlay (1.9)
-//   .aimanager/capsules.local.json  local capsule values (1.11), never committed
+//   .aimanager/capsules.local.json  optional local capsule values, never committed
 // =============================================================================
 {
   // Editor association for completion and diagnostics. This URI is stable for
@@ -109,11 +106,11 @@
   // the default type-to-skill mapping (technical-considerations 3.1). Without
   // it, the declared "type"/"platform" maps to the shipped skill of that name
   // (redmine -> the shipped Redmine skill, gitlab -> the glab skill). If the
-  // named skill is unavailable, the agent falls back to the generic connector
-  // shape plus "note"; "doctor" does not inspect installed skills.
+  // named skill is unavailable, the agent falls back to the declared source
+  // coordinates plus "note"; "doctor" does not inspect installed skills.
   "trackers": {
-    // Source types shown in the docs: "redmine", "jira", "linear". The set
-    // is not closed yet (no JSON Schema published).
+  // Source types shown in the docs: "redmine", "jira", "linear". The set is
+  // intentionally open so custom platforms do not require a schema release.
     "sources": {
       // The client's tracker: authoritative for ticket content, read ticket
       // details here. No "auth": the Jira CLI is assumed pre-configured, the
@@ -238,142 +235,74 @@
   },
 
   // ---------------------------------------------------------------------------
-  // Environments and their typed connectors (technical-considerations 1.6)
+  // Components: operational scopes inside repositories (1.4)
+  // ---------------------------------------------------------------------------
+  "components": {
+    "billing_api": {
+      "path": "src/Billing",
+      "repo": "api_billing",
+      "role": "billing HTTP API"
+    },
+    // A second component in the same repository demonstrates why components
+    // are a separate scope axis rather than aliases for repositories.
+    "billing_worker": {
+      "path": "src/Worker",
+      "repo": "api_billing",
+      "role": "asynchronous billing worker",
+      "depends_on": ["billing_api"]
+    },
+    "billing_front": {
+      "path": "src",
+      "repo": "front_billing",
+      "role": "billing web application",
+      "depends_on": ["billing_api"]
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Environments: logical targets only (technical-considerations 1.6)
   // ---------------------------------------------------------------------------
   // Environment ids are free-form map keys; the suggested (not enforced)
   // convention is dev / preprod (staging) / prod. This example uses preprod
   // and prod (technical-considerations 1.6).
-  // Connectors nested under an environment belong to it, so they do not
-  // repeat an "environment" field.
+  // Concrete operations against an environment are capsules below.
   "environments": {
+    "local": {
+      "label": "Local development",
+      "url": "http://localhost:8080",
+      "component": "billing_api"
+    },
     "preprod": {
       "label": "Preprod (staging)",
       "url": "https://preprod.shop.acme.example",
-      // Typed ssh connector: host, optional user and jump host.
-      "ssh": {
-        "host": "preprod-web01.acme.example",
-        "user": "deploy",
-        "jump_host": "bastion.agency.example"
-      },
-      // Typed logs connector, transport "ssh": the agent reads the systemd
-      // journal unit through this environment's ssh connector above.
-      "logs": {
-        "transport": "ssh",
-        "journal_unit": "acme-shop.service"
-      }
+      "component": "billing_api",
+      "note": "Deployment target for integration testing. Use declared capsules for logs and data access."
     },
     "prod": {
       "label": "Production",
       "url": "https://shop.acme.example",
-      // No ssh connector on purpose: agents never ssh to prod (see rules).
-      // Typed logs connector, transport "file": prod logs are shipped to a
-      // share mounted on the workstation, readable without touching prod.
-      "logs": {
-        "transport": "file",
-        "path": "/mnt/acme-logs/prod/app.log"
-      }
+      "component": "billing_api",
+      "note": "Production operations are restricted by the rules below."
     }
   },
 
   // ---------------------------------------------------------------------------
-  // Data stores: typed, declarative connectors (technical-considerations 1.6)
+  // Capsules: every bounded project command AI Manager runs (1.10)
   // ---------------------------------------------------------------------------
-  // "type" selects the connector shape. "environment" points to a declared
-  // environment above. Usernames are plain (not secrets); passwords, tokens
-  // and API keys are referenced by environment variable NAME only
-  // (technical-considerations 1.7). Never put a secret value here.
-  "data_stores": {
-    "db_preprod": {
-      "type": "database",
-      "environment": "preprod",
-      // Optional link to a declared galaxy member (technical-considerations
-      // 1.6): this database serves the billing API, so the CLI can answer
-      // "which connectors serve api_billing".
-      "repo": "api_billing",
-      "engine": "mysql",
-      "host": "db.preprod.acme.example",
-      "port": 3306,
-      "database": "acme_shop",
-      "user": "acme_ro",
-      "access": "read-only",
-      "password_env": "ACME_PREPROD_DB_PASSWORD",
-      // This connector declares the FACTS. To actually run a query without the
-      // password entering the transcript, use the "db-preprod" capsule below
-      // (technical-considerations 1.11): AI Manager runs it in its own process
-      // and returns the declared template plus the scrubbed result.
-      "note": "Secret-safe access is the 'db-preprod' capsule (aimanager run db-preprod --query \"...\")."
-    },
-    "db_prod": {
-      "type": "database",
-      "environment": "prod",
-      "engine": "mysql",
-      "host": "db.prod.acme.example",
-      "port": 3306,
-      "database": "acme_shop",
-      // Read-only account; the optional "access" marker is an advisory hint for
-      // the LLM, not an enforced permission (a rule below forbids writes too).
-      // See technical-considerations 1.8.
-      "user": "acme_ro",
-      "access": "read-only",
-      "password_env": "ACME_PROD_DB_PASSWORD",
-      // Optional free-text hint for the agent on how to use this connector
-      // (technical-considerations 1.6): a flag, the capsule to prefer, a
-      // caveat. Loaded only when this connector is queried. This one shows the
-      // OTHER execution path: no capsule for prod, so the agent forms the
-      // mysql call itself, passing the password by NAME (never reading it).
-      "note": "No capsule for prod: form the mysql client call yourself, passing -p\"$ACME_PROD_DB_PASSWORD\" by NAME (never read the value). Read-only account."
-    },
-    // Search layer: Elasticsearch declares an index.
-    "search_products": {
-      "type": "elasticsearch",
-      "environment": "preprod",
-      "endpoint": "https://es.preprod.acme.example:9200",
-      "index": "acme_products",
-      "api_key_env": "ACME_PREPROD_ES_API_KEY",
-      // Optional "mcp" pointer (technical-considerations 1.11): a lightweight
-      // declarative hint that an MCP server can serve this connector. No
-      // machinery - the usage skill just surfaces it so the agent can prefer
-      // the MCP tools when available.
-      "mcp": { "server": "elasticsearch" }
-    },
-    // Legacy search layer: Solr declares a core.
-    "search_legacy": {
-      "type": "solr",
-      "environment": "preprod",
-      "endpoint": "https://solr.preprod.acme.example:8983",
-      "core": "acme_catalog",
-      "user": "solr_ro",
-      "password_env": "ACME_PREPROD_SOLR_PASSWORD"
-    },
-    // Cache layer: Redis declares a numeric db.
-    "cache": {
-      "type": "redis",
-      "environment": "preprod",
-      "endpoint": "redis://redis.preprod.acme.example:6379",
-      "db": 0,
-      "password_env": "ACME_PREPROD_REDIS_PASSWORD"
-    }
-  },
-
-  // ---------------------------------------------------------------------------
-  // Capsules: secret-hiding commands AI Manager runs (technical-considerations 1.11)
-  // ---------------------------------------------------------------------------
-  // A capsule is a one-shot command AI MANAGER executes itself, in its own
-  // process, for one purpose: to keep a secret out of the agent's transcript.
-  // AI Manager reads the local values file, resolves the "command" template,
-  // runs it, and returns the DECLARED TEMPLATE plus the scrubbed result. The
-  // resolved command line (which may contain a literal secret) never reaches
-  // an agent tool-call, so it never enters the transcript.
+  // A capsule is a bounded, non-interactive command AI MANAGER executes itself.
+  // It may require no local values and contain no placeholders at all, as the
+  // test and log examples below do. Private templates retain transcript
+  // protection.
   //
   // Committed / local boundary: whatever is written LITERALLY in "command" is
   // committed here; every {placeholder} is filled from elsewhere. Placeholders
   // listed in "supplied" are filled by the AGENT at call time; ALL OTHER
   // placeholders are filled from the never-committed local values file.
   //
-  // Execution is argv-based, no shell (technical-considerations 1.11): the
-  // template is split into an argv once, each {placeholder} substitutes as ONE
-  // atomic argument, and no shell ever re-interprets the result - a supplied
-  // value full of quotes or $(...) is just data. Consequence: no pipes or
+  // Execution is argv-based, no shell (technical-considerations 1.10): the
+  // template is split into argv once, then each {placeholder} is substituted
+  // inside its existing element. It can never create another argument, and no
+  // shell re-interprets it: quotes or $(...) are data. Consequence: no pipes or
   // redirections inside a template. Before returning, AI Manager scrubs both
   // stdout and stderr, replacing every resolved non-supplied value with its
   // {name}, so an error that re-echoes its arguments cannot leak a value.
@@ -385,9 +314,6 @@
   // full golden example in doc/reference-capsule.jsonc):
   //   {
   //     "db-preprod": {
-  //       "host":     "db.preprod.acme.example",
-  //       "user":     "acme_ro",
-  //       "database": "acme_shop",
   //       "password": "$ACME_PREPROD_DB_PASSWORD"   // literal value OR $ENV ref
   //     }
   //   }
@@ -396,38 +322,60 @@
   // do not inspect whether the named variable currently exists.
   "capsules": {
     "db-preprod": {
-      // Semantic facts that help the agent reason (not secrets); they mirror
-      // the "db_preprod" data_store connector above.
-      "engine": "mysql",
-      // Machine-checkable link to the connector this capsule operates on.
-      "connector": "db_preprod",
+      "label": "Run one read-only SQL query against the preprod billing database",
+      "type": "database-query",
       "environment": "preprod",
+      "component": "billing_api",
+      // Optional informational pointer to an analogous external MCP tool.
+      // AI Manager neither dispatches to it nor applies capsule guarantees to
+      // it; `aimanager run` always executes `command`.
+      "mcp": { "server": "mysql", "tool": "query" },
       // Optional advisory hint for the LLM; AI Manager does not enforce it.
       "access": "read-only",
       "note": "One-shot SQL against preprod, read-only. AI Manager returns the declared template and scrubbed rows, so the password never enters the transcript.",
-      // The command template. {query} is supplied by the AGENT; {host}, {user},
-      // {password}, {database} come from the local values file.
-      "command": "mysql -h {host} -u {user} -p{password} {database} -e {query}",
+      // Shared coordinates stay committed for zero-guess onboarding. {query}
+      // is supplied by the AGENT; only {password} comes from local values.
+      // Inline substitution stays inside this one pre-parsed argv element.
+      "command": "mysql --host=db.preprod.acme.example --user=acme_ro --password={password} acme_shop --execute {query}",
       // Placeholders filled by the agent at call time (everything else is local).
       "supplied": ["query"],
       // Safety limits applied by AI Manager. Output is buffered and scrubbed;
       // a larger result must be narrowed by the caller rather than streamed.
       "timeout_seconds": 30,
       "max_output_bytes": 1048576
+    },
+    "test-api-billing": {
+      "label": "Run the billing API test suite",
+      "type": "test",
+      "component": "billing_api",
+      "cwd": "www/api_billing",
+      "command": "make test",
+      "timeout_seconds": 900
+    },
+    "logs-local-billing": {
+      "label": "Read the last 200 local billing API log lines",
+      "type": "logs",
+      "environment": "local",
+      "component": "billing_api",
+      "cwd": "www/api_billing",
+      "access": "read-only",
+      "command": "docker compose logs --tail=200 app"
     }
   },
 
   // ---------------------------------------------------------------------------
-  // Documentation locations (technical-considerations 1.6, "docs" connector)
+  // Documentation locations (technical-considerations 1.6)
   // ---------------------------------------------------------------------------
   // Each entry declares exactly one location field: "path" (local, relative
   // to the directory containing this manifest), "url" (remote page or space),
   // or "repository_url" (remote repository holding documentation). The
-  // separate "repo" field, when present, always names a declared galaxy
-  // member and never carries a URL.
+  // optional scope is either "repo" or "component", never both. "repo" always
+  // names a declared galaxy member and never carries a URL; a component
+  // implies its owner repo.
   "docs": {
     "functional": {
       "path": "doc/functional",
+      "component": "billing_api",
       "label": "Functional specifications (markdown, versioned with the galaxy)"
     },
     "wiki": {
@@ -441,55 +389,23 @@
   },
 
   // ---------------------------------------------------------------------------
-  // Local commands: acting on this project locally (technical-considerations 1.10)
-  // ---------------------------------------------------------------------------
-  // The AGENT-run executable surface: typed and explicit, never smuggled into
-  // a connector field. The CLI lists these; the agent decides whether to run
-  // one. Team-shared commands live here in the COMMITTED manifest (the team
-  // vets them like any code - AI Manager ships no trust machinery, see
-  // technical-considerations 5); personal commands belong in the gitignored
-  // .aimanager.local.jsonc overlay instead.
-  // Any command declared in the resolved configuration is authorized for agent
-  // use. Project-specific confirmation requirements belong in "rules" below.
-  //
-  // No "cwd" field (technical-considerations 1.10): when a command must run
-  // from a specific directory, the label says so in prose and the agent
-  // handles the cd itself (see "logs_local" below).
-  //
-  // Boundary with capsules (technical-considerations 1.10 / 1.11): these are
-  // the NO-SECRET case, so the AGENT runs them. When a command carries a
-  // secret that must stay out of the transcript, it is a "capsule" (above)
-  // that AI MANAGER runs itself instead. Criterion: "is there a secret to
-  // hide?" If no, it is a local_command; if yes, it is a capsule.
-  "local_commands": {
-    "logs_local": {
-      "run": "docker compose logs -f app",
-      "label": "Tail the local app container logs (run from www/api_billing)"
-    },
-    "db_shell": {
-      "run": "docker compose exec db mysql -u acme_ro acme_shop",
-      "label": "Open a read-only MySQL shell in the local db container"
-    }
-  },
-
-  // ---------------------------------------------------------------------------
   // IF-THEN intent rules and guardrails (technical-considerations 1.8)
   // ---------------------------------------------------------------------------
   // A declarative routing table from intents to approaches. "if" is a
   // plain-language condition the agent recognizes in the user's request;
-  // "then" is the instruction to follow. AI Manager does not install, verify,
-  // or execute the referenced skills or commands; the agent resolves them
-  // itself. This is also the place for project-specific use cases, guardrails,
+  // "then" is the instruction to follow. AI Manager does not interpret rules;
+  // the agent maps them to a declared capsule or external tool skill. This is
+  // also the place for project-specific use cases, guardrails,
   // and confirmation requirements. AI Manager adds no global confirmation
-  // policy for remote writes, deployments, or declared local commands.
+  // policy for remote writes, deployments, or capsule side effects.
   "rules": [
     // Skill routing.
-    { "if": "database access is needed", "then": "use the 'db-inspect' skill with the matching data_stores connector" },
+    { "if": "preprod database access is needed", "then": "run the 'db-preprod' capsule with the narrowest possible query" },
     { "if": "a ticket must be read", "then": "use the 'ticket-workflow' skill; read details from the source holding the 'ticket_details' role" },
     { "if": "time must be booked for work done", "then": "use the 'ticket-workflow' skill; book time on the source holding the 'time_logging' role" },
 
-    // Connector routing.
-    { "if": "prod logs are needed", "then": "use the logs connector of the prod environment; never ssh to prod directly" },
+    // Capsule routing.
+    { "if": "local billing logs are needed", "then": "run the 'logs-local-billing' capsule; do not start a follow-mode stream" },
     { "if": "merge requests are needed after changes in several repos", "then": "create one merge request per modified repo, each on the instance holding the 'merge_requests' role" },
 
     // Guardrails.

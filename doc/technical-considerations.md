@@ -28,10 +28,11 @@ This document details the technical topics behind the user stories. The design d
   cross-references and execution semantics that JSON Schema cannot express
   (for example repo dependencies, placeholder correspondence, role selection,
   and a safe capsule template).
-- The repository's dependency-free reference check is
-  `node scripts/verify-reference.mjs`; it parses the golden JSONC examples and
-  asserts the cross-references exercised by them. The future Rust CLI remains
-  the authoritative full validator.
+- The repository's reference check is `bun run verify` after `bun install`.
+  Its development-only Ajv dependency validates the golden manifest against
+  Draft 2020-12; the script then checks cross-references and execution
+  semantics that the schema cannot express. The future Rust CLI remains the
+  authoritative product validator.
 
 ### 1.2 Resolution
 
@@ -120,6 +121,8 @@ Manifest support:
 - **Orchestration model (decided).** AI Manager provides declared facts; the agent derives the actions. The manifest carries enough structure (members, dependencies, hosting instances and their roles, trackers) for the agent to understand by itself what a cross-repo request implies. Example: the user modified two repos of the galaxy and asks to "create the MRs"; the agent creates one merge request per modified repo, each on the right instance (see 1.5). No orchestration engine, no scripted actions.
 - **Composition (decided).** A sub-repo may carry its own manifest, but manifests never compose: the nearest one to the execution directory wins in full (see 1.2).
 
+**Components inside repositories (decided 2026-07-22).** A repository and a deployable or operational component are different axes. Monorepos may declare a top-level `components` map whose entries carry a normalized POSIX `path` relative to their owning repository, a `repo` id, a free-form `role`, and optional `depends_on` component ids. Capsules, environments, and documentation may name a component so the agent can distinguish services that share one Git repository. Component paths may be nested; path lookup compares the combined `repo.path/component.path`, and the most specific matching path owns a file.
+
 ### 1.5 Code hosting: synchronized instances with roles
 
 A repo is not always hosted in one place. Real case: two synchronized GitLab instances, where merge requests are opened and test pipelines run on the first, while deployment pipelines are viewed and triggered on the second. The agent must know which instance serves which operation.
@@ -156,42 +159,32 @@ A repo is not always hosted in one place. Real case: two synchronized GitLab ins
 - With roles declared, "create the MR" routes to `dev` and "trigger the deployment" routes to `ops`, without any per-request instruction. A single-instance project declares one instance holding every role.
 - See 1.3 for duplicate-role and missing-repo-hosting behavior; the CLI never resolves either condition by map order.
 
-### 1.6 Data-source connectors
+### 1.6 Environments, documentation, and executable operations
 
-Connectors are **typed and declarative**: the manifest states what exists and how to reach it; it never embeds arbitrary shell commands in connector fields. The agent (guided by the usage skill) decides what to run. The one place command strings may appear is the explicit `local_commands` category (see 1.10), which is opt-in and vetted by the team like any committed code.
+The manifest separates passive project context from executable operations:
 
-Candidate connector types for v1, driven by actual needs:
+- `environments` names logical targets such as `dev`, `preprod`, and `prod`. Each entry carries a label, optional URL, optional repository or component association, and an LLM-facing note. It does not contain SSH or log commands.
+- `docs` points to a local path, remote URL, or documentation repository. Reading local or public documentation does not require a project command.
+- `trackers` and `code_hosting` are complex external platforms driven by their shipped or custom skills (see 3.1).
+- `capsules` are the only abstraction for bounded project commands AI Manager executes. Reading logs, querying a database, writing a CSV, running tests, starting detached services, and performing setup are all capsules (see 1.10). Rich external platforms such as trackers and code hosts remain driven by skills.
 
-| Type | Declares | Example use |
-|------|----------|-------------|
-| `ssh` | host, optional user/jump host | reach a preprod box |
-| `logs` | transport (ssh/file), systemd journal unit or file path; nested under its environment | read prod logs |
-| `database` | engine (mysql, postgres...), host, port, database, credential reference | inspect data |
-| `elasticsearch` / `solr` / `redis` | endpoint, index/core/db, credential reference | query search or cache layers |
-| `docs` | local path or remote URL/repo | find the functional documentation |
-| `tracker` | see 1.3 | read tickets, book time, open requests |
-| `code_hosting` | see 1.5 | merge/pull requests, pipelines |
+There is deliberately no parallel resource inventory or second command section. Those abstractions would duplicate either a capsule's executable information or passive prose. A project that needs to expose a database declares the bounded operations it authorizes, such as `db-schema` or `db-query`. A complex sequence belongs in a reviewed project script invoked by a capsule.
 
-**Executing a connector (decided).** A connector declares *what exists and where*; turning it into a runnable invocation is normally the agent's job. Two paths coexist:
+Environment ids and capsule `type` values are free-form strings. Suggested environment ids are `dev`, `preprod`, and `prod`; suggested capsule types include `test`, `build`, `setup`, `logs`, `database-query`, `csv-read`, `csv-write`, and `deploy`. The CLI treats these as filtering metadata rather than closed behavior enums.
 
-- **The agent forms the call itself** (the non-secret / non-wrapped case), referencing credential variables by name only (for example `mysql -h ... -u ... -p"$ACME_PROD_DB_PASSWORD" ...`), guided by the optional `note` field below and by the shipped per-tool skills (3.1).
-- **A capsule**, when a secret must stay out of the transcript: the invocation is declared as a structured capsule (1.11) whose `command` template AI Manager runs itself, in its own process, returning only the result. This is the successor to the earlier "wrapper" idea (a hand-written script the agent called as a black box): the capsule is that same protection made structured and declarative rather than an opaque script. See 1.11.
-
-**Optional `note` on any connector (decided).** Any connector may carry a free-text `"note"` giving the agent the non-obvious hint needed to use it: a specific flag, the capsule to prefer, a caveat. It is optional, LLM-addressed, and loaded only when that connector is queried.
-
-**Optional `repo` on any connector or environment (decided 2026-07-17).** In a galaxy, a connector often serves one member (the billing API's database, one service's logs). An optional `"repo"` field naming a declared repo member links the two, so the CLI can answer "which connectors serve `api_billing`". Sections stay flat (free-form ids like `billing-prod` remain the rule); small projects are unaffected. A documentation source uses `repository_url` for a remote documentation repository, never `repo`, so the two meanings cannot collide.
-
-**Extensibility: open enums with a generic fallback (decided).** The `type` of a data-source connector, the `type` of a tracker source, and the `platform` of a code-hosting instance are **open enums**. Known data stores have a strict v1 shape: database = `engine`, `host`, `port`, `database`; Elasticsearch = `endpoint`, `index`; Solr = `endpoint`, `core`; Redis = `endpoint`, `db`. An unknown data-store type must declare at least `endpoint` or `host`; tool-specific descriptive fields are allowed and are surfaced unchanged. `validate` may *warn* on an unrecognized value (a likely typo) but never *fails* on it. This keeps the system expressive as tools churn (a MongoDB, a Kafka, an S3 bucket) without waiting for a CLI release.
-
-**Environments taxonomy (decided).** Environment ids are free-form map keys; connectors reference them by that key. A convention is **suggested but not enforced**: `dev`, `preprod` (staging), `prod`. The CLI does not validate the names against a closed set, so unusual topologies stay expressible.
-
-Rationale for banning raw shell strings in connector fields: keeping connectors purely typed is what lets the CLI answer precise queries about them, and it keeps the agent-run executable surface in one visible, discoverable place (`local_commands`, 1.10) instead of scattered across connector fields. Vetting the safety of declared commands is the team's job, like any committed code (see section 5).
+**Scope coherence.** An environment, capsule, or documentation entry may name
+either a `repo` or a `component`, never both: the component already implies its
+owner repo. Scoped queries expose that effective repo. A capsule that names an
+environment and a direct scope must agree with the environment's effective
+repo and, when both name components, with its component. A capsule with no
+direct scope inherits its environment's scope for discovery. These are
+validation errors rather than precedence rules.
 
 ### 1.7 Secrets
 
-- The manifest **never contains secret values**. It references where credentials live, typically by environment variable name (`"password_env": "ACME_DB_PASSWORD"`).
-- **Secret values may live in one place: the never-committed local capsule-values file** (`.aimanager/capsules.local.json`, gitignored; see 1.11). Beyond env-var references, that file may hold literal secret values, but only for capsules, and only consumed **inside AI Manager's own process** when it runs the capsule. The "agent never reads secret values" behavior is preserved because AI Manager returns the declared template and scrubbed command result, never the resolved command line. The manifest itself still holds no secret values.
-- External commands differ in how they authenticate, so tracker sources and hosting instances may carry an **optional `auth` declaration** whose `mode` matches what the command supports. Secret values are forbidden in every mode; only references and mode names appear in the file. Modes shown in the docs (set not closed):
+- The manifest **never contains secret values**. Tracker and hosting authentication references environment-variable names; capsule templates use placeholders for every private value.
+- **Secret values may live in one place: the never-committed local capsule-values file** (`.aimanager/capsules.local.json`, gitignored; see 1.10). It may hold literal values or `$ENV_VAR` references and is consumed only inside AI Manager's process. A capsule with no non-supplied placeholders needs no local entry.
+- External commands differ in how they authenticate, so tracker sources and hosting instances may carry an **optional `auth` declaration** whose `mode` matches what the command supports. Secret values are forbidden in every mode; only references and mode names appear in the file. V1 supports exactly these modes:
   - `preconfigured` (the default when `auth` is absent): the external CLI is assumed already configured on the machine, and authentication stays entirely in the user's hands. `glab` notably can be authenticated against several GitLab instances ahead of time.
   - `env`: credentials live in environment variables referenced by name (`"token_env": "GITLAB_AGENCY_TOKEN"`, `"api_key_env"`, `"password_env"`...). The agent may drive the login or re-login process itself, passing variables by name and never reading their values.
   - `interactive`: the agent may start the CLI's login flow but hands over to the user to complete it.
@@ -206,21 +199,21 @@ A declarative routing table from intents to approaches:
 ```jsonc
 {
   "rules": [
-    { "if": "database access is needed", "then": "use the 'db-inspect' skill" },
-    { "if": "prod logs are needed", "then": "use the logs connector; never ssh to prod directly" }
+    { "if": "database access is needed", "then": "run the matching database-query capsule" },
+    { "if": "prod logs are needed", "then": "run the read-prod-logs capsule; never form an ad-hoc SSH command" }
   ]
 }
 ```
 
-- Rules are plain declarations (condition and instruction, both readable by the LLM). AI Manager does not install, verify, or execute the referenced skills or commands; the agent resolves them itself.
-- **`then` is free text the agent maps (decided).** The instruction is prose; the agent maps it to whatever skill or capability its ecosystem offers, or acts directly on the referenced connector when none matches. A skill named in a rule (`'db-inspect'`) **need not exist** as an installed skill - if it is absent, the agent falls back to the rule's intent and the connector. No skill registry, no name coupling: this keeps rules agent-agnostic (skills are installed once per machine, not per project).
+- Rules are plain declarations (condition and instruction, both readable by the LLM). AI Manager does not interpret them; the usage skill maps them to declared capsules or external tool skills.
+- **`then` is free text the agent maps (decided).** A capsule or skill named in a rule need not exist for schema validity. If it is absent, the agent reports the missing capability and proposes a manifest improvement rather than improvising an undeclared project operation.
 - This doubles as a place for project-specific use cases, instructions, and guardrails ("never X on prod", "ask before creating a client ticket").
-- **The resolved configuration is the authorization boundary (decided 2026-07-20).** A connector, capsule, or local command present in the merged AI Manager configuration is authorized for the agent to use. AI Manager adds no global confirmation for sensitive reads, remote writes, deployments, or declared local commands. When a project wants confirmation or a narrower usage policy, its author expresses that policy in `rules`, `note`, or the entry's prose. This authorization does not create permissions in the target service; the configured account and remote system still decide what the command can actually do.
-- **Optional structured `access` hint (decided 2026-07-20).** A lightweight `"access": "read-only"` may be declared on a connector or capsule as information for the LLM. It is optional and purely advisory: the CLI returns it when present but never interprets or enforces it, including during `aimanager run`. It is not a sandbox, permission, or confirmation mechanism.
+- **The resolved configuration is the authorization boundary (decided 2026-07-20).** Declared tracker sources, hosting instances, documentation locations, and capsules are authorized for agent use. AI Manager adds no global confirmation for sensitive reads, remote writes, deployments, or local side effects. Projects express confirmation or usage policies in `rules` and notes. Target services still enforce actual account permissions.
+- **Optional structured `access` hint (decided 2026-07-20).** A lightweight `"access": "read-only"` may be declared on a capsule as information for the LLM. It is advisory and never enforced, including during `aimanager run`.
 
 ### 1.9 Local overlay (personal, gitignored)
 
-A `.aimanager.local.jsonc` sitting **beside** the resolved `.aimanager.jsonc` (same directory) provides a personal, gitignored overlay for private paths, personal preferences, personal `auth` overrides, and personal `local_commands` (see 1.10). Compatibility rules (decided):
+A `.aimanager.local.jsonc` sitting **beside** the resolved `.aimanager.jsonc` (same directory) provides a personal, gitignored overlay for private paths, personal preferences, personal `auth` overrides, and personal capsule overrides. Compatibility rules (decided):
 
 - **Deep merge, key by key.** Local values override committed values; local-only keys are added.
 - **Exact merge semantics.** Objects merge recursively. Scalars and arrays
@@ -229,45 +222,34 @@ A `.aimanager.local.jsonc` sitting **beside** the resolved `.aimanager.jsonc` (s
   An overlay is validated after merge against the normal manifest schema, so a
   partial nested override is legal only when the resulting manifest is valid.
 - **Same directory only.** The overlay applies only to the manifest it sits next to; it does not merge across the walk-up chain, keeping the nearest-wins/no-inheritance rule of 1.2 intact.
-- **Same safety rules as the base file.** No secret values anywhere; no executable strings outside the typed `local_commands` category; validated identically to the committed manifest.
+- **Same safety rules as the base file.** No secret values anywhere; executable strings appear only in capsules; the merged result is validated identically to the committed manifest.
 - **Version must be compatible** with the base manifest; a mismatch is a validation error.
-- **Personal, never shared.** It is gitignored and never travels between machines. Team-shared `local_commands` belong in the committed manifest; the overlay is the home for personal ones.
-- **Never a home for secrets.** The overlay deep-merges into the manifest, so the agent reads it like the manifest itself. This is why capsule values live in a separate file the agent never reads (`.aimanager/capsules.local.json`, 1.11) rather than in the overlay.
+- **Personal, never shared.** It is gitignored and never travels between machines. Team-shared capsules belong in the committed manifest; personal overrides or additions may live in the overlay.
+- **Never a home for secrets.** The overlay deep-merges into the manifest, so the agent reads it like the manifest itself. This is why capsule values live in a separate file the agent never reads (`.aimanager/capsules.local.json`, 1.10) rather than in the overlay.
 
-### 1.10 Local commands (acting locally, not only on external tools)
+### 1.10 Capsules (all bounded project operations)
 
-AI Manager is not restricted to external systems. Reading logs or acting on a project sometimes goes through local tooling (a `docker compose` invocation, a make target). The manifest may declare a typed `local_commands` category the CLI can list, so the agent discovers "how to do X locally on this project" the same way it discovers a connector. `local_commands` covers the **no-secret** case: there is nothing to hide, so the **agent** runs the command (contrast the capsule of 1.11, which AI Manager runs itself because a secret is involved). Each entry is a typed `{ "run": <command>, "label": <human description> }`. Decisions:
+A **capsule** is a bounded, non-interactive project command that **AI Manager executes itself, in its own process**. It is the only manifest section that contains executable strings. Tests, builds, setup, bounded log reads, database queries, CSV operations, and deployments all use this primitive whether or not they need private values.
 
-- **Explicit and typed, never hidden.** Local commands live in their own `local_commands` category, not smuggled into connector fields. The one agent-run executable surface stays visible and discoverable.
-- **Vetted by the team, no trust machinery (decided 2026-07-17).** Ensuring declared commands are safe is the developers' responsibility, like any committed code; AI Manager ships no confirmation or change-detection mechanism (see section 5). Team-shared commands live in the committed manifest; personal ones in the gitignored local overlay (1.9).
-- **No `cwd` field (decided 2026-07-17).** When a command must run from a specific directory (a galaxy member's compose file), the `label` states it in prose and the agent handles the `cd` itself. The schema stays minimal; the information lives where the agent reads anyway.
-- **Listable, not auto-run.** The CLI lists local commands on request; whether and when to run one is the agent's decision, exactly as with connectors. Where an ecosystem cannot auto-trigger the usage skill, the user can add a line to their `AGENTS.md` (or equivalent) telling the agent to list local commands via the CLI.
-- **Boundary with capsules (decided).** The role of "a wrapper around a connector" is now the **capsule** (1.11), not an opaque hand-written script: when the invocation carries a secret that must stay out of the transcript, it is a capsule AI Manager runs itself. `local_commands` keeps only the no-secret local tooling the agent runs directly. Boundary criterion: "is there a secret to hide, so must AI Manager run it?" If no, it is a `local_commands` entry; if yes, it is a capsule (1.11).
+- **Capsules requiring no local values are first-class.** A capsule may have no placeholders, or only agent-supplied placeholders, and may omit `supplied` when the template has none. It requires no entry in the local values file.
+- **Private templates remain transcript-safe.** When non-supplied placeholders exist, AI Manager reads their values inside its own process, resolves the template, runs it, and returns the declared template plus scrubbed stdout/stderr. The resolved command line never enters the agent transcript.
 
-### 1.11 Capsules (secret-hiding commands AI Manager runs)
-
-A **capsule** is a one-shot command that **AI Manager executes itself, in its own process**, for one purpose: to keep a secret out of the agent's transcript. It is the single, deliberate exception to "AI Manager runs nothing" (goal.md objective 2), and it revises the earlier "wrapper" path of 1.6 into a structured, declarative form. The name is final (decided 2026-07-17; the concept was designed 2026-07-13 under the working name "contract"). Decisions:
-
-- **Capsules exist to hide secrets by running the command themselves.** AI Manager reads the local values file inside its own process, resolves the `command` template, runs it via subprocess, and returns the declared template plus scrubbed stdout/stderr to the agent. The resolved command line (which may contain a literal secret) never appears in an agent tool-call, so it never enters the transcript or the model context. This is why "the agent never sees secret values" survives even though a file now holds them: the reason is **transcript-leak prevention**, not third-party trust. The values file is never committed, so there is no third party to distrust.
-
-- **The committed manifest holds the capsule declaration, including the `command` template.** The declaration lives in `.aimanager.jsonc` with `{variable}` placeholders in the template.
+- **The committed manifest holds the complete operation declaration.** Each capsule has a human-readable `label`, a `command` template, optional `type`, `cwd`, `repo`, `component`, `environment`, `mcp`, `access`, and `note`, plus optional `{variable}` placeholders.
+  - `cwd` is a normalized POSIX path relative to the manifest directory and may not escape it. `/` is the separator on every platform and backslashes are invalid. `.` names the manifest directory; absolute paths, empty segments, `.` segments, and `..` segments are invalid. AI Manager sets the child working directory itself.
+  - A capsule may name `repo` or `component`, never both, plus an `environment`. These are validated discovery metadata governed by the scope-coherence rule in 1.6; they do not alter the command.
+  - `mcp` is optional informational metadata `{ server, tool? }` naming an analogous capability exposed by an already configured MCP server. AI Manager does not dispatch to it, install it, assert argument equivalence, or apply capsule guarantees to it. The usage skill only surfaces the hint; a separate external-tool skill, when available, defines whether and how to use that tool. `aimanager run` always executes `command`.
   - **Committed / local boundary rule.** Whatever the author writes **literally** in the template is committed; whatever they turn into a `{variable}` placeholder is filled from elsewhere. The author draws the private/shared line field by field simply by this choice.
-  - **Who fills each `{variable}`.** Variables declared `supplied` are filled by the **agent** at call time (example: `{query}`, the SQL string). **All other** `{variables}` are filled from the local values file.
-  - The manifest also keeps the semantic facts that help the agent reason
-    (`connector`, engine, environment, an optional `access: read-only` hint,
-    and a `note`). `connector`, when present, is a data-store id and lets
-    validation check the capsule's environment metadata against the connector.
-    `access` remains advisory and need not be present on either declaration.
-    None of these fields holds secret values.
+  - **Who fills each `{variable}`.** Variables declared in optional `supplied` are filled by the agent at call time. All other placeholders are filled from the local values file. Omitting `supplied` is equivalent to `[]`.
 
 - **The local values file holds, per capsule, the VALUE of each non-supplied `{variable}`** - either a literal value or a `$ENV_VAR` reference. It is plain JSON, never committed, gitignored: `.aimanager/capsules.local.json` (the directory name aligns to the manifest family; note the spelling without a dash). Its shape is frozen by a commented golden example, [reference-capsule.jsonc](reference-capsule.jsonc), paired with the `capsules` block of the [reference manifest](reference-manifest.jsonc). It lives outside the personal overlay (1.9) on purpose: the overlay merges into the manifest and is therefore agent-readable, while this file must never be read by the agent.
+  Shared non-secret coordinates belong literally in the committed command so a new developer can run `init` without rediscovering them. Non-supplied placeholders are reserved for secrets or genuinely machine-local values.
 
-- **Execution verb (decided 2026-07-20):** `aimanager run <name> [--param value ...]`. It executes capsules only; `local_commands` remain agent-run. Example: `aimanager run db-preprod --query "SELECT ..."`.
+- **Execution verb:** `aimanager run <name> [--param value ...]`. Examples: `aimanager run test-api` and `aimanager run db-preprod --query "SELECT ..."`.
 
-- **Execution is argv-based, no shell (decided 2026-07-17).** The `command` template is split into an argv **once at parse time** (shell-words rules); each `{placeholder}` is then substituted as one atomic argument, and AI Manager executes the argv directly, with no intermediate shell. An agent-supplied value containing quotes, `;` or `$(...)` is just data: injection is impossible by construction. Consequence to document for authors: pipes and redirections are not available inside a template (wrap them in a script the template calls if truly needed).
+- **Execution is argv-based, no shell (decided 2026-07-17).** The `command` template is split into argv **once at parse time** (shell-words rules), before substitution. Each non-executable argv element may contain at most one placeholder, optionally surrounded by a literal prefix or suffix such as `--password={password}`, and each placeholder name occurs exactly once in a template. Substitution changes that one element's contents and can never create another argument. An agent-supplied value containing quotes, `;` or `$(...)` is therefore data. Placeholders in the executable, multiple placeholders in one element, shell operators, pipes, and redirections are invalid; a reviewed script may be invoked when a project needs a complex sequence. The supplied names `help`, `json`, `manifest`, and `version` are reserved for CLI options.
 
 - **Template-visible, resolved-command-hidden output (decided 2026-07-20).** Every `aimanager run` result, successful or not, includes the declared command template so the agent knows what shape of command was executed. It never includes the resolved command line. Some commands re-echo their arguments on error, which could leak a value on stderr; before returning, AI Manager replaces, in **both stdout and stderr**, every occurrence of every resolved non-supplied value with its `{name}` placeholder. The exit code passes through untouched, so the agent keeps a usable diagnostic while the values stay masked.
-- **Bounded, literal transcript protection.** Capsule output is buffered, capped
+- **Bounded execution and literal transcript protection.** Capsule output is buffered, capped
   by `max_output_bytes` (default 1 MiB), and killed after `timeout_seconds`
   (default 30 seconds). Scrubbing is deterministic longest-value-first literal
   replacement and rejects an empty resolved value. It protects the agent
@@ -275,29 +257,32 @@ A **capsule** is a one-shot command that **AI Manager executes itself, in its ow
   values, data intentionally returned by the remote system, shell history, or
   same-machine process inspection. The capsule threat model is therefore
   transcript-leak prevention, not a general secret vault or data-loss-prevention
-  boundary.
+  boundary. A project may raise the declared limits for a finite build or test,
+  but every run remains bounded.
 
 - **The frontier - what is NOT a capsule:**
-  - A local runnable **without** a secret (a make target, `docker compose logs -f app`) stays a `local_commands` entry (1.10), run by the **agent**, not by AI Manager. Boundary criterion: "is there a secret to hide, so must AI Manager run it?" If no secret, it is a plain local command the agent runs.
-  - **Complex external tools** (`glab`, `gh`, Jira, Redmine) are not capsules - too rich to template. Instead AI Manager **ships a skill per popular tool** to help the agent drive it, mapped by default from the manifest's existing `code_hosting.platform` and `trackers.type` and overridable per source via the optional `skill` field; see 3.1 for depth, embedded scripts, and fallback. Auth for these stays agent-side, by name reference (1.7 unchanged for trackers/hosting).
-  - **MCP servers**: a lightweight declarative pointer only - an optional `mcp` field on the relevant connector that the usage skill surfaces. No machinery.
+  - **Interactive or unbounded commands** are unsupported: no TTY, stdin conversation, foreground server, REPL, or follow-mode stream. Prefer finite equivalents (`logs --tail`, detached services, one-shot queries). AI Manager does not add a second execution abstraction for these cases.
+  - **Shell programs** are unsupported inside templates: no pipes, redirects, substitutions, or shell operators. A reviewed script may implement a complex sequence and be invoked as one argv-based capsule.
+  - **Complex external platforms** (`glab`, `gh`, Jira, Redmine) remain driven by shipped or custom skills rather than being reduced to capsule templates.
 
 - **CLI additions and onboarding** (see 2.1):
-  - `init` creates `.aimanager/capsules.local.json` with one stub per
-    non-supplied `{variable}`, creates `.aimanager/.gitignore` containing the
-    values-file exclusion, and restricts the values file to the current user
-    where the OS supports it. It is idempotent and never overwrites an existing
-    value or file.
+  - When at least one capsule has a non-supplied placeholder, `init` creates
+    `.aimanager/capsules.local.json` with one stub per such variable, creates
+    `.aimanager/.gitignore` containing the values-file exclusion, and restricts
+    the values file to the current user where supported. It is idempotent and
+    never overwrites an existing value. When no capsule needs a local value,
+    neither local file is required or created.
   - `validate` has two scopes: `validate manifest` validates only committed
     material and is suitable for CI; `validate local` additionally checks that
     each non-supplied `{variable}` has a value in the local values file.
   - `doctor` validates the manifest, overlay, and local capsule configuration only. It does not resolve `$ENV` references, inspect installed skills, test credentials, or contact remote systems (see 2.1).
-  - Colleague onboarding: clone -> `aimanager init` -> the colleague fills the local values file themselves, out of band -> `validate local` or `doctor` confirms configuration coherence. Runtime access problems are diagnosed by the agent from the scrubbed command error. AI Manager never transfers a value.
+  - Colleague onboarding: clone -> `aimanager init` -> the colleague fills only private or machine-local stubs themselves, out of band -> `validate local` or `doctor` confirms configuration coherence. Shared non-secret coordinates are already committed in capsule commands. Runtime access problems are diagnosed by the agent from the scrubbed command error. AI Manager never transfers a private value.
 
 - **File topology (flat siblings):**
   - `.aimanager.jsonc` - committed manifest (1.1).
   - `.aimanager.local.jsonc` - personal overlay (1.9).
-  - `.aimanager/capsules.local.json` - the local capsule-values file, gitignored.
+  - `.aimanager/capsules.local.json` - optional local capsule-values file,
+    gitignored; absent when no capsule needs a private value.
 
 ## 2. The CLI
 
@@ -306,18 +291,21 @@ A **capsule** is a one-shot command that **AI Manager executes itself, in its ow
 The single entry point between manifests and agents. Responsibilities:
 
 - **resolve**: locate the manifest from the cwd (walk-up). If none is found, fail with an explanatory error (see 1.2).
-- **query**: return the slice of context relevant to a stated need ("logs for prod", "tracker for time logging", "repos and dependencies", "rules matching database"), not the whole file. Exposed as **strict subcommands** (`get logs --env prod`) for testability. A looser `match` helper (fuzzy phrase to subcommand) was considered and **dropped (decided 2026-07-17)**: the consumer is already an LLM; `summary` plus well-written `--help` text is enough to pick the right subcommand, and a keyword matcher would be a fragile component to maintain.
+- **query**: return the slice of context relevant to a stated need ("log capsules for prod", "tracker for time logging", "repo or component owning this path", "rules matching database"), not the whole file. Exposed as strict `get` and `list` subcommands for testability. A fuzzy `match` helper remains unnecessary because the consumer is already an LLM.
 - **summary** (decided 2026-07-17, promoted from "possibly"): a compact inventory of what THIS project declares - sections present, ids, roles, capsules, tool skills to load - in a few dozen tokens. It is the first command the usage skill runs; progressive discovery applies to the CLI, not only to skills.
-- **init**: scaffold the local capsule-values file (`.aimanager/capsules.local.json`) from the manifest's capsules - one stub per non-supplied `{variable}` (see 1.11). Onboarding entry point: a colleague clones, runs `init`, then fills the stubs themselves out of band.
+- **init**: scaffold the local capsule-values file (`.aimanager/capsules.local.json`) from the manifest's capsules - one stub per non-supplied `{variable}` (see 1.10). Capsules with no local values create no stub.
 - **validate**: syntax, schema version, and referential coherence: declared ids
-  are unique; repo paths are relative, normalized, and non-overlapping;
-  `depends_on` targets exist and form no cycle; hosting ids exist; environment,
-  connector `repo`, and capsule `connector` references exist; and linked capsule
-  environment metadata agrees with its connector. The local scope also checks
+  are unique; repo paths are relative, normalized, and distinct; nested repo
+  boundaries are allowed and path lookup uses the longest match; repo and
+  component `depends_on` targets exist and form no cycle; hosting ids exist;
+  component owners and capsule/docs/environment repo, component, and environment
+  references exist; repeated scope is forbidden and capsule/environment scope
+  is coherent; declared paths are normalized POSIX paths and capsule cwd paths
+  stay inside the manifest directory. The local scope also checks
   **capsule field correspondence** and the syntax of `$ENV` references, but
   never whether those names currently resolve.
 - **doctor (decided 2026-07-20)**: a convenience aggregate that validates the resolved manifest, overlay, and local capsule configuration. It checks configuration only. It does not inspect environment-variable availability, installed skills, CLI sessions, credentials, connectivity, remote permissions, or any external service. The agent diagnoses execution failures from the returned error output.
-- **run**: execute a named capsule in AI Manager's own process, resolving its template from the local values file and returning the declared template plus the scrubbed result (see 1.11). It is the one place AI Manager runs a command itself and does not execute `local_commands`.
+- **run**: execute a named capsule in AI Manager's own process, optionally resolving private placeholders from the local values file, setting its declared cwd, and returning the declared template plus the scrubbed result (see 1.10).
 
 The exact v1 subcommands, selectors, exit behavior and JSON envelope are
 defined in [CLI contract](cli-contract.md). They are intentionally small, but
@@ -343,22 +331,22 @@ stable enough to make the trackers-first vertical slice independently testable.
 
 ### 3.1 Usage skill
 
-- **Trigger**: manually, or automatically when the user's question requires external data (tickets, logs, database, docs) or a declared local command. The skill description must be written so ecosystems with model-driven skill selection activate it on such questions. **Where an ecosystem has no auto-trigger mechanism (decided), the fallback is manual invocation**; the user may add a short line to their `AGENTS.md` (or equivalent) pointing the agent at the CLI (for example, to list local commands).
-- **Flow**: run `summary` **from the session's launch directory** (see 1.2: if resolution fails, stop and tell the user; never `cd` around hunting for a manifest) -> query the relevant slice -> act on the returned connectors, roles, and rules -> answer.
+- **Trigger**: manually, or automatically when the user's question requires external data, documentation, or a declared project operation. The skill description must be written so ecosystems with model-driven skill selection activate it on such questions. Where an ecosystem has no auto-trigger mechanism, the fallback is manual invocation or a short pointer in `AGENTS.md`.
+- **Flow**: run `summary` **from the session's launch directory** (see 1.2: if resolution fails, stop and tell the user; never `cd` around hunting for a manifest) -> query the relevant repo, component, capsule, tracker, hosting, docs, environment, or rules slice -> act -> answer.
 - **Built-in guardrail**: if an action requires an external CLI the agent cannot authenticate to without reading secret values itself, it stops entirely and asks the user how to proceed (see 1.7). If a command was attempted, the agent diagnoses the failure from its scrubbed error output; `doctor` does not probe authentication.
-- **Manifest evolution feedback (decided).** When the skill hits a gap (a needed connector or fact the manifest does not declare), it **proposes a concrete manifest edit for the user to accept and never applies one silently**. The user stays in control of what the manifest gains.
-- **Progressive discovery**: the always-loaded surface is a short description plus the instruction to call the CLI. Everything else (connector semantics, edge cases) lives in deeper reference files or in CLI output, loaded only when the task requires it. When the user's question needs no external data, the cost is near zero.
-- **Shipped per-tool skills (decided 2026-07-13, refined 2026-07-17).** The core stays tool-agnostic, but AI Manager **ships a skill per popular tool** (GitLab, GitHub, Jira, Redmine) to help the agent drive it. This promotes the former "tool guidance notes" from small reference notes into shipped skills. Each skill is loaded through progressive discovery only when that tool is actually involved; complex external tools are handled this way rather than as capsules (see 1.11), and an optional `mcp` pointer on a connector is surfaced the same way. Refinements (all decided 2026-07-17):
+- **Manifest evolution feedback (decided).** When the skill hits a gap (a needed capsule or fact the manifest does not declare), it **proposes a concrete manifest edit for the user to accept and never applies one silently**. The user stays in control of what the manifest gains.
+- **Progressive discovery**: the always-loaded surface is a short description plus the instruction to call the CLI. Everything else lives in scoped CLI output or deeper skill references loaded only when needed.
+- **Shipped per-tool skills (decided 2026-07-13, refined 2026-07-17).** The core stays tool-agnostic, but AI Manager **ships a skill per popular tool** (GitLab, GitHub, Jira, Redmine) to help the agent drive it. Each skill is loaded only when that platform is involved; complex external platforms are handled this way rather than as capsules (see 1.10). Refinements:
   - **Depth varies by tool.** For CLIs the models already know well (`gh`, `glab`): a strict minimum - multi-instance authentication, host selection, the few non-obvious pitfalls - never a full manual. For tools whose API and workflows the models know less (Redmine, Jira): a full driving skill with progressively loaded references (endpoints, time logging, statuses, pagination).
   - **Embedded scripts where no good CLI exists.** Redmine has no maintained canonical CLI, so the shipped Redmine skill carries a `scripts/` directory of executable helpers driving the full REST API. Scripts are **Python 3, standard library only** (no `pip install`): robust JSON, pagination, and HTTP error handling on any dev machine. Each script reads its credentials from the environment by name **itself**, so the secret never transits through the transcript - the same property capsules provide, obtained naturally.
-  - **Mapping: default by type, overridable per source.** With no `skill` field, the declared `trackers.type` / `code_hosting.platform` maps to the shipped skill of that name (`redmine` -> the shipped Redmine skill, `gitlab` -> the `glab` skill); the usage skill surfaces the right one by intent. An optional `skill` field on a source or instance **overrides** the mapping (an in-house tool, a house workflow). When the named skill is unavailable to the agent, it falls back to the generic connector shape plus `note` - the same soft-fallback logic as rules (1.8). `doctor` does not discover or inventory installed skills.
+  - **Mapping: default by type, overridable per source.** With no `skill` field, the declared `trackers.type` / `code_hosting.platform` maps to the shipped skill of that name. An optional `skill` field overrides the mapping. When unavailable, the agent uses the declared platform coordinates plus `note`; `doctor` does not inventory installed skills.
 
 ### 3.2 Setup skill
 
 A guided, didactic process to bootstrap a manifest in any folder (repo or not):
 
 1. **Analyze first.** Inspect the current folder: single repo, multi-repo galaxy, plain directory; detect hints (`.git`, CI configs, docker-compose services, existing docs folders) to pre-fill the interview.
-2. **Interview.** Ask where the project's information lives: trackers (which, URLs, which project, which role each plays), repos, environments, log access, data stores, documentation. Allow free-form detail for complex cases (multiple trackers, lifecycle, galaxies). Never read secret values (names and locations only).
+2. **Interview.** Ask where project information lives and which bounded operations should be exposed: trackers, repos, components, environments, documentation, tests, builds, setup, logs, data queries, exports, and deployments. Never read secret values; ask only for placeholder names and where the user will configure them.
 3. **Write and validate** the manifest, with comments explaining each section.
 4. **Offer tool assistance.** Propose installing or configuring external CLIs the manifest relies on (`glab`, `gh`, a Jira CLI), with the user's consent. Redmine needs no install: its shipped skill drives the REST API directly through embedded scripts (3.1).
 5. **Explain.** State what was created, what works now, and what the user must do (define the variable in their shell profile, restart the agent so it picks up the environment, restart a service). Didactic tone, in the user's language.
@@ -367,7 +355,7 @@ A guided, didactic process to bootstrap a manifest in any folder (repo or not):
 
 ### 3.3 Automation-discovery skill
 
-- Reviews the project and the manifest to suggest opportunities that are not yet covered: undeclared data sources it can detect, repetitive manual steps mentioned by the user, missing IF-THEN rules, tools worth installing.
+- Reviews the project and the manifest to suggest opportunities that are not yet covered: useful bounded capsules, repetitive manual steps, missing IF-THEN rules, docs, components, or tools worth installing.
 - **Scope (decided): manifest improvements plus clearly-flagged ecosystem-level automation suggestions (hooks, scheduled jobs), never applied automatically.** The two are kept visibly separate so the declarative core stays clean; the ecosystem suggestions are proposals the user implements, not actions the skill takes.
 - Output is a proposal list the user validates; accepted manifest items translate into manifest updates or setup actions.
 
@@ -392,14 +380,14 @@ All setup and management skills must:
 ## 4. Agent-agnosticism
 
 - **Compatibility baseline**: any ecosystem that can (a) run a CLI and (b) follow markdown instructions can use AI Manager. That covers Claude Code, Codex, Gemini CLI, OpenCode, and most others.
-- Skills are authored once in plain markdown with minimal frontmatter, then adapted to each ecosystem's convention (skills, custom prompts, rules files). **Auto-trigger capabilities differ; the usage skill defines an auto-trigger mode, and where an ecosystem does not support one the fallback is manual invocation (decided).** The user may wire a pointer into their `AGENTS.md` or equivalent so the agent knows to call the CLI (for example to list local commands).
-- Nothing in the manifest is agent-specific: it describes the project, not the agent. This includes local commands (1.10), which describe how to act on *this project's* local tooling, not on any particular agent.
+- Skills are authored once in plain markdown with minimal frontmatter, then adapted to each ecosystem's convention. Auto-trigger capabilities differ; the fallback is manual invocation or a pointer in `AGENTS.md` telling the agent to query AI Manager capabilities.
+- Nothing in the manifest is agent-specific: it describes the project and its bounded operations, not the agent.
 
 ## 5. Security summary
 
-- No secret values in manifests, in overlays, in CLI output, or in conversations (variable names only). The **one** place a real secret value may sit is the never-committed local capsule-values file (`.aimanager/capsules.local.json`, 1.11), read only inside AI Manager's own process; it never reaches the agent, the transcript, or CLI output.
-- No executable strings in connector fields; the agent-run executable surface, `local_commands` (1.10), is explicit and discoverable.
-- **Capsule execution model (decided).** A capsule (1.11) is the single command AI Manager runs itself, precisely to keep the secret it carries out of the agent's transcript: `aimanager run` resolves the template from the local values file inside its own process, executes it argv-based without a shell, and returns the declared template plus the scrubbed result. The agent never sees the resolved command line or the secret; a value re-echoed on stderr is masked before return (1.11).
-- **Configuration means authorization; project rules define confirmations (decided 2026-07-20).** A connector or command present in the resolved configuration is authorized for agent use. AI Manager adds no sensitive-data allowlist and no global confirmation policy for remote writes, deployments, or local side effects. Projects express any confirmation or usage restriction in their rules and notes. The optional `access` marker is an LLM-facing hint only and is never enforced.
+- No secret values in manifests, overlays, CLI output, or conversations. The one place a real secret may sit is the never-committed local capsule-values file (`.aimanager/capsules.local.json`, 1.10), read only inside AI Manager's process.
+- Capsules are the only executable manifest section. They run argv-based without a shell, stdin, or TTY, with bounded output and time.
+- **Private capsule execution.** `aimanager run` resolves non-supplied placeholders internally and scrubs their literal values from stdout and stderr. Capsules without local values follow the same execution path.
+- **Configuration means authorization; project rules define confirmations.** Declared tracker sources, hosting instances, documentation locations, and capsules are authorized for agent use. AI Manager adds no product-wide confirmation policy; projects express restrictions in rules and notes. `access` is advisory only.
 - **No trust machinery (decided 2026-07-17).** AI Manager ships no first-use confirmation and no change detection: a committed manifest is vetted like any other committed file, by the team's own review process. Ensuring the declared commands are safe is the developers' responsibility. AI Manager targets teams and companies with an internal trust process; the open-source-drive-by-contribution threat model is out of scope.
 - Placing the manifest in a parent directory keeps it fully private when the repo cannot or should not carry it.
