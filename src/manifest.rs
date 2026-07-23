@@ -1,0 +1,523 @@
+use regex::Regex;
+use serde_json::{Map, Value};
+use std::{
+    collections::{BTreeSet, HashMap},
+    fs,
+    path::{Component, Path, PathBuf},
+};
+
+#[derive(Debug)]
+pub struct SenpaiError {
+    pub code: i32,
+    pub name: &'static str,
+    pub message: String,
+    pub details: Vec<Value>,
+}
+impl SenpaiError {
+    pub fn new(code: i32, name: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            name,
+            message: message.into(),
+            details: vec![],
+        }
+    }
+}
+
+pub fn strip_jsonc(input: &str) -> Result<String, SenpaiError> {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    let mut quoted = false;
+    let mut escaped = false;
+    while let Some(c) = chars.next() {
+        if quoted {
+            out.push(c);
+            if escaped {
+                escaped = false
+            } else if c == '\\' {
+                escaped = true
+            } else if c == '"' {
+                quoted = false
+            };
+            continue;
+        }
+        if c == '"' {
+            quoted = true;
+            out.push(c);
+            continue;
+        }
+        if c == '/' && chars.peek() == Some(&'/') {
+            chars.next();
+            for x in chars.by_ref() {
+                if x == '\n' {
+                    out.push('\n');
+                    break;
+                }
+            }
+            continue;
+        }
+        if c == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            let mut closed = false;
+            while let Some(x) = chars.next() {
+                if x == '*' && chars.peek() == Some(&'/') {
+                    chars.next();
+                    closed = true;
+                    break;
+                }
+                if x == '\n' {
+                    out.push('\n');
+                }
+            }
+            if !closed {
+                return Err(SenpaiError::new(
+                    4,
+                    "invalid_manifest",
+                    "Unterminated JSONC block comment.",
+                ));
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    Ok(out)
+}
+
+pub fn parse_jsonc(path: &Path, code: i32, kind: &'static str) -> Result<Value, SenpaiError> {
+    let input = fs::read_to_string(path).map_err(|e| {
+        SenpaiError::new(code, kind, format!("Cannot read {}: {e}", path.display()))
+    })?;
+    serde_json::from_str(&strip_jsonc(&input)?).map_err(|e| {
+        SenpaiError::new(
+            code,
+            kind,
+            format!("Invalid JSONC in {}: {e}", path.display()),
+        )
+    })
+}
+
+pub fn find_manifest(from: &Path) -> Result<PathBuf, SenpaiError> {
+    let mut here = fs::canonicalize(from).map_err(|e| {
+        SenpaiError::new(
+            3,
+            "manifest_not_found",
+            format!("Cannot resolve launch directory {}: {e}", from.display()),
+        )
+    })?;
+    if here.is_file() {
+        here.pop();
+    }
+    loop {
+        let candidate = here.join(".senpai.jsonc");
+        if candidate.is_file() {
+            return fs::canonicalize(candidate)
+                .map_err(|e| SenpaiError::new(3, "manifest_not_found", e.to_string()));
+        }
+        if !here.pop() {
+            break;
+        }
+    }
+    Err(SenpaiError::new(
+        3,
+        "manifest_not_found",
+        "No .senpai.jsonc found while walking upward from the requested directory.",
+    ))
+}
+
+pub fn deep_merge(base: &mut Value, overlay: Value) {
+    match (base, overlay) {
+        (Value::Object(a), Value::Object(b)) => {
+            for (k, v) in b {
+                if v.is_null() {
+                    a.remove(&k);
+                } else if let Some(old) = a.get_mut(&k) {
+                    deep_merge(old, v);
+                } else {
+                    a.insert(k, v);
+                }
+            }
+        }
+        (a, b) => *a = b,
+    }
+}
+
+pub struct Loaded {
+    pub path: PathBuf,
+    pub dir: PathBuf,
+    pub value: Value,
+}
+pub fn load(manifest: Option<&str>) -> Result<Loaded, SenpaiError> {
+    let path = match manifest {
+        Some(s) => {
+            let p = PathBuf::from(s);
+            if !p.is_absolute() {
+                return Err(SenpaiError::new(
+                    2,
+                    "invalid_arguments",
+                    "--manifest must be an absolute path.",
+                ));
+            }
+            if !p.is_file() {
+                return Err(SenpaiError::new(
+                    3,
+                    "manifest_not_found",
+                    format!("Manifest not found: {s}"),
+                ));
+            }
+            fs::canonicalize(p).unwrap()
+        }
+        None => find_manifest(&std::env::current_dir().unwrap())?,
+    };
+    let dir = path.parent().unwrap().to_path_buf();
+    let mut value = parse_jsonc(&path, 4, "invalid_manifest")?;
+    let overlay = dir.join(".senpai.local.jsonc");
+    if overlay.is_file() {
+        let o = parse_jsonc(&overlay, 4, "invalid_overlay")?;
+        deep_merge(&mut value, o);
+    }
+    validate(&value)?;
+    Ok(Loaded { path, dir, value })
+}
+fn object<'a>(v: &'a Value, key: &str) -> Option<&'a Map<String, Value>> {
+    v.get(key)?.as_object()
+}
+fn ids(v: &Value, key: &str) -> BTreeSet<String> {
+    object(v, key)
+        .map(|x| x.keys().cloned().collect())
+        .unwrap_or_default()
+}
+fn relative_path(value: &str) -> bool {
+    value == "."
+        || (!value.contains('\\')
+            && !value.starts_with('/')
+            && !value
+                .split('/')
+                .any(|p| p == "." || p == ".." || p.is_empty()))
+}
+pub fn validate(v: &Value) -> Result<(), SenpaiError> {
+    let schema: Value = serde_json::from_str(include_str!("../schema/senpai.schema.json"))
+        .expect("the bundled manifest schema must be valid JSON");
+    let validator = jsonschema::validator_for(&schema)
+        .expect("the bundled manifest schema must be a valid JSON Schema");
+    if let Some(error) = validator.iter_errors(v).next() {
+        return Err(SenpaiError::new(
+            4,
+            "invalid_manifest",
+            format!("Manifest does not match the v1 schema: {error}"),
+        ));
+    }
+    let root = v.as_object().ok_or_else(|| {
+        SenpaiError::new(4, "invalid_manifest", "Manifest root must be an object.")
+    })?;
+    if root.get("version") != Some(&Value::from(1)) {
+        return Err(SenpaiError::new(
+            4,
+            "invalid_manifest",
+            "Only manifest version 1 is supported.",
+        ));
+    }
+    let project = object(v, "project")
+        .ok_or_else(|| SenpaiError::new(4, "invalid_manifest", "project is required."))?;
+    for key in ["name", "label", "context", "stack"] {
+        if !project.contains_key(key) {
+            return Err(SenpaiError::new(
+                4,
+                "invalid_manifest",
+                format!("project.{key} is required."),
+            ));
+        }
+    }
+    let repos = ids(v, "repos");
+    let envs = ids(v, "environments");
+    let hosting = object(v, "code_hosting")
+        .and_then(|x| x.get("instances"))
+        .and_then(Value::as_object);
+    if let Some(rs) = object(v, "repos") {
+        for (id, r) in rs {
+            let o = r.as_object().ok_or_else(|| {
+                SenpaiError::new(
+                    4,
+                    "invalid_manifest",
+                    format!("repos.{id} must be an object."),
+                )
+            })?;
+            let p = o.get("path").and_then(Value::as_str).ok_or_else(|| {
+                SenpaiError::new(
+                    4,
+                    "invalid_manifest",
+                    format!("repos.{id}.path is required."),
+                )
+            })?;
+            if !relative_path(p) {
+                return Err(SenpaiError::new(
+                    4,
+                    "invalid_manifest",
+                    format!("repos.{id}.path must be normalized relative POSIX path."),
+                ));
+            }
+            for dep in o
+                .get("depends_on")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+            {
+                if !repos.contains(dep) {
+                    return Err(SenpaiError::new(
+                        4,
+                        "invalid_manifest",
+                        format!("repos.{id} depends_on unknown repo {dep}."),
+                    ));
+                }
+            }
+            if let Some(h) = o.get("hosting").and_then(Value::as_object) {
+                for inst in h.keys() {
+                    if !hosting.map(|x| x.contains_key(inst)).unwrap_or(false) {
+                        return Err(SenpaiError::new(
+                            4,
+                            "invalid_manifest",
+                            format!("repos.{id} references unknown hosting instance {inst}."),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    if let Some(es) = object(v, "environments") {
+        for (id, e) in es {
+            if let Some(r) = e.get("repo").and_then(Value::as_str)
+                && !repos.contains(r)
+            {
+                return Err(SenpaiError::new(
+                    4,
+                    "invalid_manifest",
+                    format!("environments.{id} references unknown repo {r}."),
+                ));
+            }
+        }
+    }
+    if let Some(cs) = object(v, "capsules") {
+        for (id, c) in cs {
+            validate_capsule(id, c, &repos, &envs, object(v, "environments"))?;
+        }
+    }
+    if let Some(ds) = object(v, "docs") {
+        for (id, d) in ds {
+            if let Some(r) = d.get("repo").and_then(Value::as_str)
+                && !repos.contains(r)
+            {
+                return Err(SenpaiError::new(
+                    4,
+                    "invalid_manifest",
+                    format!("docs.{id} references unknown repo {r}."),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+fn placeholders(command: &str) -> Result<Vec<String>, SenpaiError> {
+    let re = Regex::new(r"\{([A-Za-z][A-Za-z0-9_-]*)\}").unwrap();
+    let stripped = re.replace_all(command, "");
+    if stripped.contains('{') || stripped.contains('}') {
+        return Err(SenpaiError::new(
+            4,
+            "invalid_manifest",
+            "Capsule command has unmatched braces.",
+        ));
+    }
+    Ok(re
+        .captures_iter(command)
+        .map(|c| c[1].to_string())
+        .collect())
+}
+fn validate_capsule(
+    id: &str,
+    c: &Value,
+    repos: &BTreeSet<String>,
+    envs: &BTreeSet<String>,
+    envdefs: Option<&Map<String, Value>>,
+) -> Result<(), SenpaiError> {
+    let o = c.as_object().ok_or_else(|| {
+        SenpaiError::new(
+            4,
+            "invalid_manifest",
+            format!("capsules.{id} must be object."),
+        )
+    })?;
+    let command = o.get("command").and_then(Value::as_str).ok_or_else(|| {
+        SenpaiError::new(
+            4,
+            "invalid_manifest",
+            format!("capsules.{id}.command is required."),
+        )
+    })?;
+    let argv = shell_words::split(command).map_err(|_| {
+        SenpaiError::new(
+            4,
+            "invalid_manifest",
+            format!("capsules.{id}.command cannot be parsed deterministically."),
+        )
+    })?;
+    if argv.is_empty() || argv[0].contains('{') {
+        return Err(SenpaiError::new(
+            4,
+            "invalid_manifest",
+            format!("capsules.{id} executable cannot contain a placeholder."),
+        ));
+    }
+    if command.contains("|")
+        || command.contains(";")
+        || command.contains("&&")
+        || command.contains("$(`")
+    {
+        return Err(SenpaiError::new(
+            4,
+            "invalid_manifest",
+            format!("capsules.{id}.command contains shell operators."),
+        ));
+    }
+    let ph = placeholders(command)?;
+    let unique: BTreeSet<_> = ph.iter().collect();
+    if unique.len() != ph.len() {
+        return Err(SenpaiError::new(
+            4,
+            "invalid_manifest",
+            format!("capsules.{id} repeats a placeholder."),
+        ));
+    }
+    for a in &argv {
+        if placeholders(a)?.len() > 1 {
+            return Err(SenpaiError::new(
+                4,
+                "invalid_manifest",
+                format!("capsules.{id} has multiple placeholders in one argv element."),
+            ));
+        }
+    }
+    let supplied: BTreeSet<String> = o
+        .get("supplied")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect();
+    for x in &supplied {
+        if !ph.iter().any(|p| p == x) {
+            return Err(SenpaiError::new(
+                4,
+                "invalid_manifest",
+                format!("capsules.{id}.supplied contains undeclared placeholder {x}."),
+            ));
+        }
+    }
+    if let Some(cwd) = o.get("cwd").and_then(Value::as_str)
+        && !relative_path(cwd)
+    {
+        return Err(SenpaiError::new(
+            4,
+            "invalid_manifest",
+            format!("capsules.{id}.cwd must be normalized."),
+        ));
+    }
+    let repo = o.get("repo").and_then(Value::as_str);
+    if let Some(r) = repo
+        && !repos.contains(r)
+    {
+        return Err(SenpaiError::new(
+            4,
+            "invalid_manifest",
+            format!("capsules.{id} references unknown repo {r}."),
+        ));
+    }
+    if let Some(e) = o.get("environment").and_then(Value::as_str) {
+        if !envs.contains(e) {
+            return Err(SenpaiError::new(
+                4,
+                "invalid_manifest",
+                format!("capsules.{id} references unknown environment {e}."),
+            ));
+        }
+        if let (Some(r), Some(defs)) = (repo, envdefs)
+            && let Some(er) = defs
+                .get(e)
+                .and_then(|x| x.get("repo"))
+                .and_then(Value::as_str)
+            && r != er
+        {
+            return Err(SenpaiError::new(
+                4,
+                "invalid_manifest",
+                format!("capsules.{id} repo and environment repo disagree."),
+            ));
+        }
+    }
+    Ok(())
+}
+pub fn capsule_locals(v: &Value) -> Result<HashMap<String, BTreeSet<String>>, SenpaiError> {
+    let mut out = HashMap::new();
+    if let Some(cs) = object(v, "capsules") {
+        for (id, c) in cs {
+            let o = c.as_object().unwrap();
+            let supplied: BTreeSet<String> = o
+                .get("supplied")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            let locals = placeholders(o["command"].as_str().unwrap())?
+                .into_iter()
+                .filter(|x| !supplied.contains(x))
+                .collect();
+            out.insert(id.clone(), locals);
+        }
+    }
+    Ok(out)
+}
+pub fn normalize_under(dir: &Path, input: &str) -> Result<String, SenpaiError> {
+    let candidate = if Path::new(input).is_absolute() {
+        PathBuf::from(input)
+    } else {
+        std::env::current_dir().unwrap().join(input)
+    };
+    let normalized = normalize(&candidate);
+    let base = normalize(dir);
+    if !normalized.starts_with(&base) {
+        return Err(SenpaiError::new(
+            4,
+            "invalid_manifest",
+            "Path is outside the manifest directory.",
+        ));
+    }
+    Ok(normalized
+        .strip_prefix(base)
+        .unwrap()
+        .to_string_lossy()
+        .trim_start_matches('/')
+        .to_string()
+        .if_empty("."))
+}
+trait IfEmpty {
+    fn if_empty(self, other: &str) -> String;
+}
+impl IfEmpty for String {
+    fn if_empty(self, other: &str) -> String {
+        if self.is_empty() { other.into() } else { self }
+    }
+}
+pub fn normalize(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for x in p.components() {
+        match x {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}

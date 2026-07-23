@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "verify": "node scripts/verify-reference.mjs && bash tests/installer.test.sh",
-    "test:installer": "bash tests/installer.test.sh"
+    "verify": "node scripts/verify-reference.mjs && bash tests/installer.test.sh && bash tests/cli.test.sh && cargo fmt --check && cargo clippy -- -D warnings && cargo test",
+    "test:installer": "bash tests/installer.test.sh",
+    "test:cli": "bash tests/cli.test.sh"
   },
   "devDependencies": {
     "ajv": "8.17.1",
