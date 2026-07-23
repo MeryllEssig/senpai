@@ -369,7 +369,11 @@ fn validate_capsule(
     if command.contains("|")
         || command.contains(";")
         || command.contains("&&")
-        || command.contains("$(`")
+        || command.contains("||")
+        || command.contains("$(")
+        || command.contains('`')
+        || command.contains('>')
+        || command.contains('<')
     {
         return Err(SenpaiError::new(
             4,
