@@ -4,6 +4,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 binary="$root/target/debug/senpai"
 cargo build --quiet --manifest-path "$root/Cargo.toml"
+"$binary" --version --json | grep -q '0.1.0'
 workspace=$(mktemp -d)
 trap 'rm -rf "$workspace"' EXIT
 

@@ -836,6 +836,9 @@ pub fn run(args: Vec<String>) -> i32 {
                 "Expected a command.",
             ));
         }
+        if args[0] == "--version" || args[0] == "version" {
+            return Ok(json!({"version":env!("CARGO_PKG_VERSION")}));
+        }
         if args[0] == "resolve" {
             let from = get_flag(&args, "--from")
                 .map(PathBuf::from)
@@ -879,7 +882,6 @@ pub fn run(args: Vec<String>) -> i32 {
                 Ok(json!({"valid":true}))
             }
             "run" => run_capsule(&l, &args),
-            "--version" | "version" => Ok(json!({"version":env!("CARGO_PKG_VERSION")})),
             _ => Err(SenpaiError::new(
                 2,
                 "invalid_arguments",
