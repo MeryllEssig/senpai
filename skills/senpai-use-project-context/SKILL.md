@@ -48,12 +48,9 @@ agent restart to be inherited.
 
 ## Network-aware execution
 
-A platform adapter or CLI that contacts a declared tracker or hosting URL makes
-an outbound network request. Its workflow permission and the execution
-environment's network permission are separate: when the environment requires
-network approval, request it before the call with the concrete operation and
-target, rather than first probing a restricted sandbox. Do not report a remote
-result unless the adapter or CLI returned a complete, usable response.
+Adapters and CLIs targeting declared tracker or hosting URLs use outbound
+network. Request environment-level network approval before the call when
+needed; it is separate from workflow policy. Do not trust empty output.
 
 ## Scoped command map
 
