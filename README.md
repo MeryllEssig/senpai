@@ -1,8 +1,10 @@
 <p align="center">
-  <img src="assets/senpai-logo.png" alt="Senpai logo" width="160">
-  <br>
-  <a href="https://github.com/MeryllEssig/senpai"><strong>Senpai</strong></a>
+  <a href="https://github.com/MeryllEssig/senpai">
+    <img src="assets/senpai-logo.png" alt="Senpai logo" width="200">
+  </a>
 </p>
+
+<h2 align="center"><a href="https://github.com/MeryllEssig/senpai">Senpai</a></h2>
 
 <p align="center">
   Declarative, project-scoped context for AI coding agents.
