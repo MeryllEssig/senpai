@@ -1,2 +1,7 @@
 node_modules/
 target/
+
+# Personal Senpai overlay; it can contain machine-specific paths or preferences.
+.senpai.local.jsonc
+
+.senpai/capsules.local.json
