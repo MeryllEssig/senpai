@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "verify": "node scripts/verify-reference.mjs"
+    "verify": "node scripts/verify-reference.mjs && bash tests/installer.test.sh",
+    "test:installer": "bash tests/installer.test.sh"
   },
   "devDependencies": {
     "ajv": "8.17.1",
