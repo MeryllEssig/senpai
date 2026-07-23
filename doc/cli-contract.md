@@ -53,7 +53,8 @@ aimanager summary [--manifest <absolute-path>] [--json]
 `resolve` returns the canonical absolute `manifest_path`, the directory that
 contains it, and the project name. `--from` defaults to the process cwd.
 `summary` returns only section names, declared ids, roles, capsule ids and
-types, and resolved tool-skill names. It never returns command strings.
+types, common interface names, and effective workflow-skill names. It never
+returns command strings.
 
 The usage skill calls `resolve` once from the launch directory, retains
 `manifest_path`, then supplies that path to every later command in the session.
@@ -64,6 +65,7 @@ The usage skill calls `resolve` once from the launch directory, retains
 aimanager get tracker --role <role> [--source <source-id>] [--manifest <path>] [--json]
 aimanager get ticket-route --id <ticket-id> [--source <source-id>] [--manifest <path>] [--json]
 aimanager get hosting --role <role> --repo <repo-id> [--instance <instance-id>] [--manifest <path>] [--json]
+aimanager get workflow --domain <tickets|code_changes> [--manifest <path>] [--json]
 aimanager get repo (--id <repo-id> | --path <path> | --current) [--with-dependencies] [--manifest <path>] [--json]
 aimanager list repos [--manifest <path>] [--json]
 aimanager get environment --id <environment-id> [--manifest <path>] [--json]
@@ -73,15 +75,25 @@ aimanager get docs [--id <docs-id>] [--manifest <path>] [--json]
 aimanager get rules [--manifest <path>] [--json]
 ```
 
-`get ticket-route` returns a source selection, not ticket content. The agent
-loads the returned tool skill and contacts the selected tracker itself. An
-ambiguous route exits 5 and lists candidate ids only.
+`get ticket-route` returns a source selection, not ticket content. The usage
+skill passes that selection to `aimanager-project-management`, which uses the
+source's default or custom adapter. An ambiguous route exits 5 and lists
+candidate ids only.
 
 `get tracker` and `get hosting` apply the role-selection rules in technical
 considerations 1.3. An explicit `--source` or `--instance` is valid only when
 that declaration actually holds the requested role. `get hosting` additionally
 requires that the selected instance occurs in the selected repo's `hosting`
 map.
+
+`get workflow` returns the requested `domain`, its effective `skill`, and its
+fully expanded `policy`. A declared domain always supplies its skill; otherwise
+the skill is
+`aimanager-project-use-ticket-workflow` for `tickets` or
+`aimanager-project-use-code-hosting-workflow` for `code_changes`. The expanded
+policy contains every capability defined for that domain: an omitted `read`
+is `allow`, and every other omitted capability is `deny`. This command reads
+configuration only; it does not load or inspect the named skill.
 
 `--path` accepts an absolute path or a path relative to the process cwd; the
 path does not need to exist. The CLI resolves it lexically to a normalized path
@@ -103,9 +115,9 @@ A capsule that names only an environment inherits that environment's repo for fi
 Filters combine with AND semantics.
 
 Every scoped result includes its `id`, its source section, its relevant
-`access`, `note`, `repo`, `environment`, `auth` variable *names*,
-and tool `skill` when those facts exist. It never expands an environment-variable
-value.
+`access`, `note`, `repo`, `environment`, `auth` variable *names*, and custom
+adapter `skill` when those facts exist. It never expands an
+environment-variable value.
 
 ## Local setup and diagnostics
 

@@ -49,6 +49,63 @@
       },
       "additionalProperties": false
     },
+    "workflowPermission": {
+      "type": "string",
+      "enum": ["allow", "confirm", "deny"]
+    },
+    "ticketPolicy": {
+      "type": "object",
+      "description": "Project-wide authorization policy for the common ticket interface. Omitted read defaults to allow; every other omitted capability defaults to deny.",
+      "properties": {
+        "read": { "$ref": "#/$defs/workflowPermission" },
+        "create": { "$ref": "#/$defs/workflowPermission" },
+        "update": { "$ref": "#/$defs/workflowPermission" },
+        "comment": { "$ref": "#/$defs/workflowPermission" },
+        "transition": { "$ref": "#/$defs/workflowPermission" },
+        "link": { "$ref": "#/$defs/workflowPermission" },
+        "log_time": { "$ref": "#/$defs/workflowPermission" }
+      },
+      "additionalProperties": false
+    },
+    "codeChangePolicy": {
+      "type": "object",
+      "description": "Project-wide authorization policy for the common code-change interface. Omitted read defaults to allow; every other omitted capability defaults to deny.",
+      "properties": {
+        "read": { "$ref": "#/$defs/workflowPermission" },
+        "create": { "$ref": "#/$defs/workflowPermission" },
+        "update": { "$ref": "#/$defs/workflowPermission" },
+        "comment": { "$ref": "#/$defs/workflowPermission" },
+        "request_review": { "$ref": "#/$defs/workflowPermission" },
+        "merge": { "$ref": "#/$defs/workflowPermission" },
+        "pipeline_read": { "$ref": "#/$defs/workflowPermission" },
+        "pipeline_trigger": { "$ref": "#/$defs/workflowPermission" }
+      },
+      "additionalProperties": false
+    },
+    "workflows": {
+      "type": "object",
+      "properties": {
+        "tickets": {
+          "type": "object",
+          "properties": {
+            "skill": { "type": "string", "minLength": 1 },
+            "policy": { "$ref": "#/$defs/ticketPolicy" }
+          },
+          "required": ["skill", "policy"],
+          "additionalProperties": false
+        },
+        "code_changes": {
+          "type": "object",
+          "properties": {
+            "skill": { "type": "string", "minLength": 1 },
+            "policy": { "$ref": "#/$defs/codeChangePolicy" }
+          },
+          "required": ["skill", "policy"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "project": {
       "type": "object",
       "properties": {
@@ -192,6 +249,7 @@
           "required": ["instances"],
           "additionalProperties": false
         },
+        "workflows": { "$ref": "#/$defs/workflows" },
         "repos": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/repo" } }, "additionalProperties": false },
         "environments": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/environment" } }, "additionalProperties": false },
         "capsules": { "type": "object", "patternProperties": { "^[A-Za-z][A-Za-z0-9_-]*$": { "$ref": "#/$defs/capsule" } }, "additionalProperties": false },

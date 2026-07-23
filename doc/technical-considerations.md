@@ -90,7 +90,7 @@ The set of roles is open (LLM-readable strings), not a closed enum. Each source 
 
 - Actions route by role, with no single `write_target`: "log my time" goes to the `time_logging` source, "open a hosting request" to the `hosting_requests` source, "read ticket details" to the `ticket_details` source.
 - The **build -> maintenance lifecycle move** is a one-line change to the `project` of the relevant source (for example the internal `time_logging` source moving from `acme-build` to `maintenance-general`).
-- A source may carry an optional `auth` declaration (see 1.7) and an optional `skill` declaration overriding the default type-to-skill mapping (see 3.1).
+- A source may carry an optional `auth` declaration (see 1.7) and an optional `skill` declaration overriding the technical adapter selected from its type (see 3.1).
 
 **Resolving a bare ticket number** (`#1234`) when several trackers are declared (decided):
 
@@ -152,18 +152,108 @@ A repo is not always hosted in one place. Real case: two synchronized GitLab ins
 }
 ```
 
-- `instances` declares each hosting endpoint once, with `roles` stating which operations belong to it (open merge requests, watch test pipelines, view and trigger deployment pipelines). An instance may carry an optional `auth` declaration (see 1.7); without one, the platform CLI is assumed to be pre-configured for that instance. Like a tracker source, an instance may carry an optional `skill` declaration overriding the default platform-to-skill mapping (see 3.1).
+- `instances` declares each hosting endpoint once, with `roles` stating which operations belong to it (open merge requests, watch test pipelines, view and trigger deployment pipelines). An instance may carry an optional `auth` declaration (see 1.7); without one, the platform tool is assumed to be pre-configured for that instance. Like a tracker source, an instance may carry an optional `skill` declaration overriding the adapter selected by the common interface (see 3.1).
 - Each repo maps instance ids to its path on that instance.
 - With roles declared, "create the MR" routes to `dev` and "trigger the deployment" routes to `ops`, without any per-request instruction. A single-instance project declares one instance holding every role.
 - See 1.3 for duplicate-role and missing-repo-hosting behavior; the CLI never resolves either condition by map order.
 
-### 1.6 Environments, documentation, and executable operations
+### 1.6 Project workflows, environments, documentation, and executable operations
+
+Ticket trackers and code-hosting platforms share enough behavior to expose two
+common agent-facing interfaces:
+
+- **`aimanager-project-management`** handles ticket capabilities: `read`,
+  `create`, `update`, `comment`, `transition`, `link`, and `log_time`.
+- **`aimanager-code-hosting`** handles code-change capabilities: `read`,
+  `create`, `update`, `comment`, `request_review`, `merge`, `pipeline_read`,
+  and `pipeline_trigger`.
+
+Platform adapters preserve the differences behind those interfaces. Redmine,
+Jira, and Linear do not need identical status or custom-field models, and
+GitHub and GitLab do not need identical review or pipeline models. An adapter
+advertises the common capabilities it supports and returns a clear
+"capability unavailable" result for the rest; the agent never falls back to an
+undeclared native operation. A source or hosting instance's optional `skill`
+selects a custom **technical adapter**, not a business workflow. If an
+explicitly named adapter is unavailable, the agent reports the missing
+capability and does not silently substitute the built-in adapter.
+
+Every common operation is identified by its capability name and receives the
+resolved source or instance, the relevant ticket or code-change id when one
+exists, and operation-specific arguments. Adapters normalize successful
+results around stable common fields such as `id`, `url`, `title`, and `state`,
+while preserving unavoidable platform-specific data under a `native` field.
+They return structured authentication, not-found, validation,
+unsupported-capability, and remote-service errors rather than exposing
+platform-specific failures as unstructured agent instructions.
+
+**Policy and instructions are complementary (decided 2026-07-23).** The
+top-level `workflows` section may declare `tickets` and `code_changes`. Each
+declared domain contains:
+
+- a structured `policy` whose capability values are `allow`, `confirm`, or
+  `deny`; and
+- a `skill` naming project- or company-authored instructions for how
+  permitted work should be performed.
+
+The policy answers *whether* the operation may happen. The workflow skill
+answers *how*: which completion status to use, whether and how to add a merge
+request link to a ticket, which reviewers to request, how to word comments, or
+which sequence to follow. Instructions may narrow or decline an allowed
+operation but can never broaden the policy. `confirm` requires explicit user
+confirmation for the concrete operation; `deny` stops it. In an omitted domain
+or omitted capability, `read` defaults to `allow` and every other capability
+defaults to `deny`.
+
+```jsonc
+{
+  "workflows": {
+    "tickets": {
+      "skill": "acme-ticket-workflow",
+      "policy": {
+        "read": "allow",
+        "comment": "allow",
+        "transition": "confirm",
+        "link": "allow",
+        "log_time": "confirm"
+      }
+    },
+    "code_changes": {
+      "skill": "acme-code-hosting-workflow",
+      "policy": {
+        "read": "allow",
+        "create": "confirm",
+        "request_review": "allow",
+        "merge": "deny",
+        "pipeline_read": "allow"
+      }
+    }
+  }
+}
+```
+
+When an entire domain is omitted, AI Manager uses
+`aimanager-project-use-ticket-workflow` or
+`aimanager-project-use-code-hosting-workflow` with the read-only default
+policy. A declared domain requires both `skill` and `policy`, so write
+permission can never be configured without project or company instructions.
+The shipped defaults explain safe read-only behavior; they do not silently
+invent project conventions. All skills distributed by AI Manager use the
+`aimanager-` prefix. Custom project or company skills may use any valid name.
+If a declared custom workflow skill is unavailable, the agent stops and
+reports it; the read-only default is a fallback for an omitted domain, not for
+a broken declaration.
+
+The usage skill composes the layers: resolve the source or instance and the
+effective workflow, check the policy, load the workflow instructions, then
+use the common interface and selected platform adapter. Skills do not
+implicitly invoke other skills; the usage skill is the explicit orchestrator.
 
 The manifest separates passive project context from executable operations:
 
 - `environments` names logical targets such as `dev`, `preprod`, and `prod`. Each entry carries a label, optional URL, optional repository association, and an LLM-facing note. It does not contain SSH or log commands.
 - `docs` points to a local path, remote URL, or documentation repository. Reading local or public documentation does not require a project command.
-- `trackers` and `code_hosting` are complex external platforms driven by their shipped or custom skills (see 3.1).
+- `trackers` and `code_hosting` are complex external platforms driven through the common skills and their shipped or custom adapters (see 3.1).
 - `capsules` are the only abstraction for bounded project commands AI Manager executes. Reading logs, querying a database, writing a CSV, running tests, starting detached services, and performing setup are all capsules (see 1.10). Rich external platforms such as trackers and code hosts remain driven by skills.
 
 There is deliberately no parallel resource inventory or second command section. Those abstractions would duplicate either a capsule's executable information or passive prose. A project that needs to expose a database declares the bounded operations it authorizes, such as `db-schema` or `db-query`. A complex sequence belongs in a reviewed project script invoked by a capsule.
@@ -180,11 +270,11 @@ precedence rules.
 
 - The manifest **never contains secret values**. Tracker and hosting authentication references environment-variable names; capsule templates use placeholders for every private value.
 - **Secret values may live in one place: the never-committed local capsule-values file** (`.aimanager/capsules.local.json`, gitignored; see 1.10). It may hold literal values or `$ENV_VAR` references and is consumed only inside AI Manager's process. A capsule with no non-supplied placeholders needs no local entry.
-- External commands differ in how they authenticate, so tracker sources and hosting instances may carry an **optional `auth` declaration** whose `mode` matches what the command supports. Secret values are forbidden in every mode; only references and mode names appear in the file. V1 supports exactly these modes:
-  - `preconfigured` (the default when `auth` is absent): the external CLI is assumed already configured on the machine, and authentication stays entirely in the user's hands. `glab` notably can be authenticated against several GitLab instances ahead of time.
-  - `env`: credentials live in environment variables referenced by name (`"token_env": "GITLAB_AGENCY_TOKEN"`, `"api_key_env"`, `"password_env"`...). The agent may drive the login or re-login process itself, passing variables by name and never reading their values.
-  - `interactive`: the agent may start the CLI's login flow but hands over to the user to complete it.
-- **Hard stop on unreachable authentication (core behavior).** If the user requests an action through an external CLI and the agent has no way to connect without reading secret values itself, it must stop entirely and ask the user how to proceed. This is a built-in behavior of the usage skill, not a per-project rule: it applies even when the manifest declares nothing about it. When a command fails, the agent diagnoses the failure from its error output; `doctor` does not inspect the environment, test credentials, or contact the remote service.
+- External tools differ in how they authenticate, so tracker sources and hosting instances may carry an **optional `auth` declaration** whose `mode` matches what the selected adapter supports. Secret values are forbidden in every mode; only references and mode names appear in the file. V1 supports exactly these modes:
+  - `preconfigured` (the default when `auth` is absent): the external tool is assumed already configured on the machine, and authentication stays entirely in the user's hands. `glab` notably can be authenticated against several GitLab instances ahead of time.
+  - `env`: credentials live in environment variables referenced by name (`"token_env": "GITLAB_AGENCY_TOKEN"`, `"api_key_env"`, `"password_env"`...). The adapter reads the named variable itself and never sends its value through the agent transcript.
+  - `interactive`: when supported, the adapter may start an interactive login flow but hands over to the user to complete it.
+- **Hard stop on unreachable authentication (core behavior).** If the user requests an action through an external tool or API adapter and the agent has no way to connect without reading secret values itself, it must stop entirely and ask the user how to proceed. This is a built-in behavior of the usage skill, not a per-project rule: it applies even when the manifest declares nothing about it. When an operation fails, the agent diagnoses the failure from its error output; `doctor` does not inspect the environment, test credentials, or contact the remote service.
 - The setup skill may ask the user for variable *names* and where they are defined, but must never read or echo their values.
 - Practical consequence to surface to users (didactics): agents inherit their environment at startup, so a newly defined variable requires restarting the agent.
 
@@ -203,8 +293,8 @@ A declarative routing table from intents to approaches:
 
 - Rules are plain declarations (condition and instruction, both readable by the LLM). AI Manager does not interpret them; the usage skill maps them to declared capsules or external tool skills.
 - **`then` is free text the agent maps (decided).** A capsule or skill named in a rule need not exist for schema validity. If it is absent, the agent reports the missing capability and proposes a manifest improvement rather than improvising an undeclared project operation.
-- This doubles as a place for project-specific use cases, instructions, and guardrails ("never X on prod", "ask before creating a client ticket").
-- **The resolved configuration is the authorization boundary (decided 2026-07-20).** Declared tracker sources, hosting instances, documentation locations, and capsules are authorized for agent use. AI Manager adds no global confirmation for sensitive reads, remote writes, deployments, or local side effects. Projects express confirmation or usage policies in `rules` and notes. Target services still enforce actual account permissions.
+- This remains the place for cross-cutting or exceptional project instructions and guardrails ("never X on prod"). Routine ticket and code-hosting permissions and procedures belong in `workflows`, not duplicated rules.
+- **The resolved configuration is the authorization boundary (refined 2026-07-23).** Declared tracker sources and hosting instances establish valid targets; their effective workflow policy establishes permitted operations on those targets. Documentation locations and capsules remain authorized by declaration. Target services still enforce actual account permissions.
 - **Optional structured `access` hint (decided 2026-07-20).** A lightweight `"access": "read-only"` may be declared on a capsule as information for the LLM. It is advisory and never enforced, including during `aimanager run`.
 
 ### 1.9 Local overlay (personal, gitignored)
@@ -259,7 +349,7 @@ A **capsule** is a bounded, non-interactive project command that **AI Manager ex
 - **The frontier - what is NOT a capsule:**
   - **Interactive or unbounded commands** are unsupported: no TTY, stdin conversation, foreground server, REPL, or follow-mode stream. Prefer finite equivalents (`logs --tail`, detached services, one-shot queries). AI Manager does not add a second execution abstraction for these cases.
   - **Shell programs** are unsupported inside templates: no pipes, redirects, substitutions, or shell operators. A reviewed script may implement a complex sequence and be invoked as one argv-based capsule.
-  - **Complex external platforms** (`glab`, `gh`, Jira, Redmine) remain driven by shipped or custom skills rather than being reduced to capsule templates.
+  - **Complex external platforms** (`glab`, `gh`, Jira, Redmine) remain driven through the common interface skills and their shipped or custom adapters rather than being reduced to capsule templates.
 
 - **CLI additions and onboarding** (see 2.1):
   - When at least one capsule has a non-supplied placeholder, `init` creates
@@ -288,7 +378,7 @@ The single entry point between manifests and agents. Responsibilities:
 
 - **resolve**: locate the manifest from the cwd (walk-up). If none is found, fail with an explanatory error (see 1.2).
 - **query**: return the slice of context relevant to a stated need ("log capsules for prod", "tracker for time logging", "repo owning this path", "rules matching database"), not the whole file. Exposed as strict `get` and `list` subcommands for testability. A fuzzy `match` helper remains unnecessary because the consumer is already an LLM.
-- **summary** (decided 2026-07-17, promoted from "possibly"): a compact inventory of what THIS project declares - sections present, ids, roles, capsules, tool skills to load - in a few dozen tokens. It is the first command the usage skill runs; progressive discovery applies to the CLI, not only to skills.
+- **summary** (decided 2026-07-17, promoted from "possibly"): a compact inventory of what THIS project declares - sections present, ids, roles, capsules, and workflow skills to load - in a few dozen tokens. It is the first command the usage skill runs; progressive discovery applies to the CLI, not only to skills.
 - **init**: scaffold the local capsule-values file (`.aimanager/capsules.local.json`) from the manifest's capsules - one stub per non-supplied `{variable}` (see 1.10). Capsules with no local values create no stub.
 - **validate**: syntax, schema version, and referential coherence: declared ids
   are unique; repo paths are relative, normalized, and distinct; nested repo
@@ -315,10 +405,10 @@ stable enough to make the trackers-first vertical slice independently testable.
 
 ### 2.3 Distribution
 
-- **Single Rust binary (decided).** The core installs as one command on `$PATH` with no runtime dependency, the lowest common denominator every agent ecosystem can call. Rust provides a solid JSON-Schema ecosystem for validation. Shipped Redmine helper scripts are a separate optional tool skill and require Python 3.
+- **Single Rust binary (decided).** The core installs as one command on `$PATH` with no runtime dependency, the lowest common denominator every agent ecosystem can call. Rust provides a solid JSON-Schema ecosystem for validation. The Redmine adapter scripts ship separately from the binary inside `aimanager-project-management` and require Python 3.
 - **Supported release targets (decided 2026-07-20).** v1 publishes binaries for Linux and macOS on both x86_64 and ARM64. Windows is not a supported v1 target.
 - **Install via `curl | installer.sh` (decided).** The bootstrap installer detects the supported OS/CPU pair, downloads the requested release (latest by default), and verifies its published SHA-256 checksum before installing anything. A checksum mismatch is a hard failure.
-- **Agent-specific global skill installation (decided 2026-07-20).** In the same run, the installer asks which supported ecosystems to configure and copies the adapted skills directly into each selected ecosystem's canonical user-global directory: `$CODEX_HOME/skills` (default `~/.codex/skills`) for Codex, `~/.claude/skills` for Claude Code, `~/.gemini/skills` for Gemini CLI, and `~/.config/opencode/skills` for OpenCode. The installer records exactly which AI Manager files it owns.
+- **Agent-specific global skill installation (decided 2026-07-20).** In the same run, the installer asks which supported ecosystems to configure and copies the adapted skills directly into each selected ecosystem's canonical user-global directory: `$CODEX_HOME/skills` (default `~/.codex/skills`) for Codex, `~/.claude/skills` for Claude Code, `~/.gemini/skills` for Gemini CLI, and `~/.config/opencode/skills` for OpenCode. Every distributed skill name starts with `aimanager-`; custom project and company skills are outside that namespace. The installer records exactly which AI Manager files it owns.
 - **Updates rerun the installer (decided 2026-07-20).** The installer is idempotent. Rerunning it replaces the binary and unconditionally overwrites existing AI Manager skills in the selected agent directories; local edits to those shipped skills are not preserved.
 - **Uninstall through the installer (decided 2026-07-20).** `installer.sh --uninstall` removes the binary and only the AI Manager skill files recorded as installer-owned. It never removes project manifests, overlays, or capsule-values files. There is no `aimanager update` or self-uninstall command.
 
@@ -327,14 +417,14 @@ stable enough to make the trackers-first vertical slice independently testable.
 ### 3.1 Usage skill
 
 - **Trigger**: manually, or automatically when the user's question requires external data, documentation, or a declared project operation. The skill description must be written so ecosystems with model-driven skill selection activate it on such questions. Where an ecosystem has no auto-trigger mechanism, the fallback is manual invocation or a short pointer in `AGENTS.md`.
-- **Flow**: run `summary` **from the session's launch directory** (see 1.2: if resolution fails, stop and tell the user; never `cd` around hunting for a manifest) -> query the relevant repo, capsule, tracker, hosting, docs, environment, or rules slice -> act -> answer.
-- **Built-in guardrail**: if an action requires an external CLI the agent cannot authenticate to without reading secret values itself, it stops entirely and asks the user how to proceed (see 1.7). If a command was attempted, the agent diagnoses the failure from its scrubbed error output; `doctor` does not probe authentication.
+- **Flow**: run `summary` **from the session's launch directory** (see 1.2: if resolution fails, stop and tell the user; never `cd` around hunting for a manifest) -> query the relevant repo, capsule, tracker, hosting, workflow, docs, environment, or rules slice -> check policy -> load workflow instructions when relevant -> act through the common interface and adapter -> answer.
+- **Built-in guardrail**: if an action requires an external tool or API adapter the agent cannot authenticate to without reading secret values itself, it stops entirely and asks the user how to proceed (see 1.7). If an operation was attempted, the agent diagnoses the failure from its scrubbed error output; `doctor` does not probe authentication.
 - **Manifest evolution feedback (decided).** When the skill hits a gap (a needed capsule or fact the manifest does not declare), it **proposes a concrete manifest edit for the user to accept and never applies one silently**. The user stays in control of what the manifest gains.
 - **Progressive discovery**: the always-loaded surface is a short description plus the instruction to call the CLI. Everything else lives in scoped CLI output or deeper skill references loaded only when needed.
-- **Shipped per-tool skills (decided 2026-07-13, refined 2026-07-17).** The core stays tool-agnostic, but AI Manager **ships a skill per popular tool** (GitLab, GitHub, Jira, Redmine) to help the agent drive it. Each skill is loaded only when that platform is involved; complex external platforms are handled this way rather than as capsules (see 1.10). Refinements:
-  - **Depth varies by tool.** For CLIs the models already know well (`gh`, `glab`): a strict minimum - multi-instance authentication, host selection, the few non-obvious pitfalls - never a full manual. For tools whose API and workflows the models know less (Redmine, Jira): a full driving skill with progressively loaded references (endpoints, time logging, statuses, pagination).
-  - **Embedded scripts where no good CLI exists.** Redmine has no maintained canonical CLI, so the shipped Redmine skill carries a `scripts/` directory of executable helpers driving the full REST API. Scripts are **Python 3, standard library only** (no `pip install`): robust JSON, pagination, and HTTP error handling on any dev machine. Each script reads its credentials from the environment by name **itself**, so the secret never transits through the transcript - the same property capsules provide, obtained naturally.
-  - **Mapping: default by type, overridable per source.** With no `skill` field, the declared `trackers.type` / `code_hosting.platform` maps to the shipped skill of that name. An optional `skill` field overrides the mapping. When unavailable, the agent uses the declared platform coordinates plus `note`; `doctor` does not inventory installed skills.
+- **Common interface skills (decided 2026-07-23).** AI Manager ships `aimanager-project-management` for tickets and `aimanager-code-hosting` for code changes and pipelines. They define stable common capability names and dispatch to focused platform adapters selected from `trackers.type` or `code_hosting.platform`. A source or instance's optional `skill` overrides only that technical adapter. A custom workflow belongs in `workflows`, keeping platform mechanics separate from project procedure.
+- **Workflow skills.** The usage skill loads the configured workflow, or the shipped `aimanager-project-use-ticket-workflow` / `aimanager-project-use-code-hosting-workflow` default, after checking the effective policy. The workflow gives instructions; it cannot grant permission. This is orchestration by the usage skill, not implicit skill-to-skill invocation.
+- **Adapter depth varies by tool.** For CLIs the models already know well (`gh`, `glab`), adapters carry only multi-instance authentication, host selection, and non-obvious pitfalls. For less familiar APIs such as Redmine and Jira, adapters carry progressively loaded references for endpoints, time logging, statuses, and pagination.
+- **Embedded Redmine API scripts.** Redmine has no maintained canonical CLI, so its adapter lives inside the `aimanager-project-management` skill's `scripts/` directory and drives the REST API directly. Scripts are **Python 3, standard library only** (no `pip install`), with robust JSON, pagination, timeouts, bounded output, credential scrubbing, and HTTP error handling. Each script reads its credentials from the named environment variable itself, so the secret never transits through the transcript.
 
 ### 3.2 Setup skill
 
@@ -343,7 +433,7 @@ A guided, didactic process to bootstrap a manifest in any folder (repo or not):
 1. **Analyze first.** Inspect the current folder: single repo, multi-repo galaxy, plain directory; detect hints (`.git`, CI configs, docker-compose services, existing docs folders) to pre-fill the interview.
 2. **Interview.** Ask where project information lives and which bounded operations should be exposed: trackers, repos, environments, documentation, tests, builds, setup, logs, data queries, exports, and deployments. Never read secret values; ask only for placeholder names and where the user will configure them.
 3. **Write and validate** the manifest, with comments explaining each section.
-4. **Offer tool assistance.** Propose installing or configuring external CLIs the manifest relies on (`glab`, `gh`, a Jira CLI), with the user's consent. Redmine needs no install: its shipped skill drives the REST API directly through embedded scripts (3.1).
+4. **Offer tool assistance.** Propose installing or configuring external CLIs the manifest relies on (`glab`, `gh`, a Jira CLI), with the user's consent. Redmine needs no separate client: its adapter drives the REST API directly through embedded scripts (3.1); Python 3 and the installed AI Manager skill are still prerequisites.
 5. **Explain.** State what was created, what works now, and what the user must do (define the variable in their shell profile, restart the agent so it picks up the environment, restart a service). Didactic tone, in the user's language.
 
 **Joining an existing manifest (decided).** When a colleague clones a repo that already carries a committed manifest, there is no separate wizard: they run `aimanager init`, fill the generated capsule-value stubs themselves, and use `validate local` or `doctor` to validate the resulting configuration. Neither command checks whether an environment variable currently exists or whether a credential works. If later execution fails, the agent diagnoses the scrubbed error and asks the user for whatever access or setup is missing without reading secret values.
@@ -383,6 +473,6 @@ All setup and management skills must:
 - No secret values in manifests, overlays, CLI output, or conversations. The one place a real secret may sit is the never-committed local capsule-values file (`.aimanager/capsules.local.json`, 1.10), read only inside AI Manager's process.
 - Capsules are the only executable manifest section. They run argv-based without a shell, stdin, or TTY, with bounded output and time.
 - **Private capsule execution.** `aimanager run` resolves non-supplied placeholders internally and scrubs their literal values from stdout and stderr. Capsules without local values follow the same execution path.
-- **Configuration means authorization; project rules define confirmations.** Declared tracker sources, hosting instances, documentation locations, and capsules are authorized for agent use. AI Manager adds no product-wide confirmation policy; projects express restrictions in rules and notes. `access` is advisory only.
+- **Configuration means authorization.** Declared targets define where the agent may act; ticket and code-change workflow policies define which common operations are allowed, denied, or require confirmation. Workflow instructions never broaden those permissions. Documentation locations and capsules remain authorized by declaration, and `access` remains advisory only.
 - **No trust machinery (decided 2026-07-17).** AI Manager ships no first-use confirmation and no change detection: a committed manifest is vetted like any other committed file, by the team's own review process. Ensuring the declared commands are safe is the developers' responsibility. AI Manager targets teams and companies with an internal trust process; the open-source-drive-by-contribution threat model is out of scope.
 - Placing the manifest in a parent directory keeps it fully private when the repo cannot or should not carry it.

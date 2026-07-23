@@ -89,31 +89,29 @@
   // The role set is open (LLM-readable strings), not a closed enum.
   //
   // Optional "auth" on a source (same on code_hosting instances) declares how
-  // the matching external command authenticates; commands differ, so the mode
+  // the selected platform adapter authenticates; tools differ, so the mode
   // does too:
-  //   - "preconfigured" (default when "auth" is absent): the CLI is already
-  //     set up on the machine, authentication stays in the user's hands.
+  //   - "preconfigured" (default when "auth" is absent): the external tool is
+  //     already set up on the machine; authentication stays with the user.
   //   - "env": credentials live in environment variables referenced by NAME
-  //     ("api_key_env", "token_env", "password_env"...); the agent may drive
-  //     the login or re-login process itself, never reading the values.
-  //   - "interactive": the agent starts the CLI's login flow and hands over
-  //     to the user to complete it.
+  //     ("api_key_env", "token_env", "password_env"...); the adapter reads
+  //     the named variable itself, never exposing the value to the agent.
+  //   - "interactive": when supported, the adapter starts a login flow and
+  //     hands over to the user to complete it.
   // Secret VALUES are forbidden in this file in every mode. If the agent has
   // no way to authenticate without reading a secret value itself, it must
   // stop entirely and ask the user how to proceed (core behavior).
   //
-  // Optional "skill" on a source (same on code_hosting instances): overrides
-  // the default type-to-skill mapping (technical-considerations 3.1). Without
-  // it, the declared "type"/"platform" maps to the shipped skill of that name
-  // (redmine -> the shipped Redmine skill, gitlab -> the glab skill). If the
-  // named skill is unavailable, the agent falls back to the declared source
-  // coordinates plus "note"; "doctor" does not inspect installed skills.
+  // Optional "skill" on a source (same on code_hosting instances) overrides
+  // the technical adapter selected by the common aimanager-project-management
+  // or aimanager-code-hosting interface. Project working instructions belong
+  // in "workflows", not in a source adapter.
   "trackers": {
   // Source types shown in the docs: "redmine", "jira", "linear". The set is
   // intentionally open so custom platforms do not require a schema release.
     "sources": {
       // The client's tracker: authoritative for ticket content, read ticket
-      // details here. No "auth": the Jira CLI is assumed pre-configured, the
+      // details here. No "auth": the Jira adapter is assumed preconfigured, the
       // user keeps full control of authentication.
       "client": {
         "type": "jira",
@@ -126,8 +124,8 @@
         "roles": ["ticket_details"]
       },
       // The agency tracker: where time is booked during the build phase, and
-      // where the client reference is carried back. Auth mode "env": the agent
-      // may log the Redmine CLI in by itself, passing the variable by name only.
+      // where the client reference is carried back. The embedded Redmine REST
+      // script reads the named environment variable itself.
       "internal": {
         "type": "redmine",
         "url": "https://redmine.agency.example",
@@ -137,7 +135,7 @@
         "auth": { "mode": "env", "api_key_env": "REDMINE_AGENCY_API_KEY" },
         "roles": ["time_logging", "external_refs"],
         // Optional catch-all ticket to book time with no dedicated ticket.
-        "time_logging": { "catch_all_ticket": "SUPPORT-0" }
+        "time_logging": { "catch_all_ticket": "9876" }
       },
       // A hosting provider's tracker: NOT authoritative ("does not make foi"),
       // used only to open and read hosting requests. When the hosting team is
@@ -148,10 +146,9 @@
         "url": "https://redmine.hosting-provider.example",
         "project": "hosting-acme",
         "roles": ["hosting_requests"],
-        // Override of the default type-to-skill mapping: this Redmine is
-        // driven by a house skill encoding the hosting provider's request
-        // workflow, not by the shipped generic Redmine skill.
-        "skill": "acme-hosting-requests"
+        // Technical adapter override for a provider-specific Redmine API.
+        // Business procedure remains in the ticket workflow below.
+        "skill": "acme-hosting-redmine-adapter"
       }
     }
     // No single "write_target": actions route by role. Reading details -> the
@@ -186,6 +183,46 @@
         // Auth mode "interactive": the agent may start "glab auth login" for
         // this instance but the user completes the flow.
         "auth": { "mode": "interactive" }
+      }
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Project workflows: permission policy + working instructions (1.6)
+  // ---------------------------------------------------------------------------
+  // Policy says WHETHER an operation may happen. The workflow skill says HOW
+  // permitted work is performed: statuses, comments, MR links, reviewers, and
+  // sequencing. Instructions can never broaden policy. "confirm" requires
+  // explicit user confirmation for the concrete operation. An omitted "read"
+  // defaults to "allow"; every other omitted capability defaults to "deny".
+  //
+  // If an entire domain is omitted, AI Manager loads its read-only default:
+  // aimanager-project-use-ticket-workflow or
+  // aimanager-project-use-code-hosting-workflow. A declared domain requires
+  // both "skill" and "policy". Custom skill names are free.
+  "workflows": {
+    "tickets": {
+      "skill": "acme-project-ticket-workflow",
+      "policy": {
+        "read": "allow",
+        "create": "confirm",
+        "comment": "allow",
+        "transition": "confirm",
+        "link": "allow",
+        "log_time": "allow"
+      }
+    },
+    "code_changes": {
+      "skill": "acme-project-code-hosting-workflow",
+      "policy": {
+        "read": "allow",
+        "create": "allow",
+        "update": "allow",
+        "comment": "allow",
+        "request_review": "allow",
+        "merge": "confirm",
+        "pipeline_read": "allow",
+        "pipeline_trigger": "confirm"
       }
     }
   },
@@ -367,22 +404,14 @@
   // A declarative routing table from intents to approaches. "if" is a
   // plain-language condition the agent recognizes in the user's request;
   // "then" is the instruction to follow. AI Manager does not interpret rules;
-  // the agent maps them to a declared capsule or external tool skill. This is
-  // also the place for project-specific use cases, guardrails,
-  // and confirmation requirements. AI Manager adds no global confirmation
-  // policy for remote writes, deployments, or capsule side effects.
+  // the agent maps them to a declared capsule or external tool skill. Routine
+  // ticket and code-hosting policy and procedure live in "workflows"; rules
+  // remain for cross-cutting or exceptional guardrails.
   "rules": [
-    // Skill routing.
     { "if": "preprod database access is needed", "then": "run the 'db-preprod' capsule with the narrowest possible query" },
-    { "if": "a ticket must be read", "then": "use the 'ticket-workflow' skill; read details from the source holding the 'ticket_details' role" },
-    { "if": "time must be booked for work done", "then": "use the 'ticket-workflow' skill; book time on the source holding the 'time_logging' role" },
 
-    // Capsule routing.
     { "if": "local billing logs are needed", "then": "run the 'logs-local-billing' capsule; do not start a follow-mode stream" },
-    { "if": "merge requests are needed after changes in several repos", "then": "create one merge request per modified repo, each on the instance holding the 'merge_requests' role" },
 
-    // Guardrails.
-    { "if": "an operation would write to the prod database", "then": "do not do it; the prod database is strictly read-only for agents, ask the user instead" },
-    { "if": "a ticket would be created in the client Jira", "then": "ask the user for explicit confirmation first" }
+    { "if": "an operation would write to the prod database", "then": "do not do it; the prod database is strictly read-only for agents, ask the user instead" }
   ]
 }

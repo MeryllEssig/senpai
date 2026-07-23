@@ -62,10 +62,14 @@ Constraint: the manifest holds no secret values; real values live only in the gi
 As a developer who just cloned a project that declares capsules, I want `aimanager init` to scaffold the local values file with one stub per private or machine-local non-supplied `{variable}`, and `validate local` or `doctor` to confirm every required entry exists and is structurally valid, so that I can complete my own setup out of band without any secret being transferred to me. Shared non-secret coordinates belong literally in the committed command.
 
 **US-1.18 - Point a source at a custom skill**
-As a developer whose tracker is an in-house tool or needs a house workflow, I want an optional `skill` field on a source or hosting instance that overrides the default type-to-skill mapping, so that the agent drives that source with my custom skill when it is available and falls back to its declared coordinates and note when it is not.
+As a developer whose tracker or code host needs a custom technical integration, I want an optional `skill` field on a source or hosting instance that overrides the adapter selected by the common interface, so that unusual APIs remain usable without mixing their implementation with my project's working procedure.
 
 **US-1.19 - Link a capsule to its project scope**
 As a developer on a galaxy or monorepo, I want a capsule to name an optional `repo`, plus an optional `environment`, so that the agent can discover the correct operation for the current repository and target without guessing from naming conventions.
+
+**US-1.20 - Declare permissions and working instructions separately**
+As a developer, I want ticket and code-change workflows to combine a structured `allow` / `confirm` / `deny` policy with a workflow skill containing my project or company instructions, so that AI Manager knows both what it may do and how I expect the work to be performed.
+Constraint: a workflow skill may narrow or explain the declared policy but never broaden it. With no workflow declaration, reads are allowed and every write is denied.
 
 ## Epic 2 - Query the context (the CLI)
 
@@ -83,7 +87,7 @@ As a developer, I want `doctor` to validate the resolved manifest, overlay, and 
 Constraint: `doctor` does not inspect environment-variable availability, installed skills, CLI sessions, credentials, connectivity, or remote permissions.
 
 **US-2.5 - Compact capability summary**
-As an AI agent, I want a `summary` command returning a compact inventory of what this project declares (sections present, ids, roles, capsules, tool skills to load) in a few dozen tokens, so that I can decide immediately which scoped queries are worth running.
+As an AI agent, I want a `summary` command returning a compact inventory of what this project declares (sections present, ids, roles, capsules, common interfaces, and workflow skills to load) in a few dozen tokens, so that I can decide immediately which scoped queries are worth running.
 
 **US-2.6 - Diagnose a capsule execution without exposing secrets**
 As an AI agent, I want every `aimanager run` result, including failures, to contain the declared command template, scrubbed stdout and stderr, and the exit status, so that I can diagnose the command myself without seeing the resolved secret-bearing command line.
@@ -100,10 +104,16 @@ As a user, I want skills designed with progressive discovery (a minimal always-l
 As a user of several agentic tools (Claude Code, Codex, Gemini CLI, OpenCode, and others), I want the skills and CLI to be agent-agnostic, so that one project setup serves every ecosystem.
 
 **US-3.4 - Hard stop when authentication is out of reach**
-As a user, I want the agent to stop entirely and ask me how to proceed whenever an action requires an external CLI it cannot authenticate to without reading secret values itself, so that secrets never enter the conversation and I keep control of the login process.
+As a user, I want the agent to stop entirely and ask me how to proceed whenever an external tool or API adapter cannot authenticate without reading secret values itself, so that secrets never enter the conversation and I keep control of the login process.
 
 **US-3.5 - One manifest per session, anchored at launch**
 As a user, I want the agent to run the CLI from the session's launch directory and stop if resolution fails (never `cd`-ing around to pick up another manifest), so that the manifest resolved at launch applies to the whole session, subdirectory manifests included in no case.
+
+**US-3.6 - Use common project-management and code-hosting interfaces**
+As a user, I want the same ticket and code-change operations regardless of whether a project uses Redmine, Jira, Linear, GitLab, or GitHub, so that my workflow remains stable while platform-specific adapters handle API and CLI differences.
+
+**US-3.7 - Follow the project's working procedure within its permissions**
+As a user, I want AI Manager to load the project's ticket or code-hosting workflow instructions after checking its structured policy, so that conventions such as transitioning a completed ticket, adding the merge-request link, or selecting reviewers are followed without granting undeclared permissions.
 
 ## Epic 4 - Set up and maintain (management skills)
 
@@ -117,7 +127,7 @@ As a user, I want the setup skill to study the current folder first to assess th
 As a user, I want setup to never read the values of secret environment variables (it may ask me for variable names and where they are defined), so that secrets never enter the conversation or the manifest.
 
 **US-4.4 - Tool installation assistance**
-As a user, I want the setup skill to offer help installing the external CLIs my manifest relies on (`glab`, `gh`, a Jira CLI; Redmine needs none, its shipped skill drives the REST API directly), so that declared capabilities are actually usable.
+As a user, I want the setup skill to offer help installing the external CLIs my manifest relies on (`glab`, `gh`, a Jira CLI; Redmine needs no separate client because its adapter drives the REST API directly), so that declared capabilities are actually usable.
 
 **US-4.5 - Didactic guidance**
 As a user, I want every setup and management skill to explain what it does and what I must do (for example restarting the agent so new environment variables are picked up, or restarting a service), in my own language, so that I understand and trust the setup instead of executing it blindly.
@@ -127,6 +137,7 @@ As a user, I want a skill that reviews my project and my habits to suggest thing
 
 **US-4.7 - Install a verified binary and the skills for my agents**
 As a Linux or macOS user on x86_64 or ARM64, I want the installer to verify the release SHA-256 checksum and copy AI Manager skills into the canonical global directory of each agent ecosystem I select, so that one installation safely configures Codex, Claude Code, Gemini CLI, or OpenCode for all my projects.
+Constraint: every skill distributed by AI Manager has an `aimanager-` prefix. Project- and company-owned custom skills may use any valid name.
 
 **US-4.8 - Predictable update and uninstall**
 As a user, I want to update AI Manager by rerunning the idempotent installer and uninstall it with `installer.sh --uninstall`, so that lifecycle management has one entry point.
@@ -143,8 +154,8 @@ As a user, I want runtime interactions to happen in my language with no default 
 **US-5.3 - Tool-agnostic core**
 As a maintainer, I want the core to stay agnostic of any specific tracker or tool, with bounded project operations represented uniformly as capsules and complex platforms handled by optional skills, so that the system survives tool churn.
 
-**US-5.4 - Per-tool guidance, depth matched to model familiarity**
-As a user of external tools, I want the shipped per-tool skills to carry a strict minimum for CLIs the models already know well (`gh`, `glab`: the few non-obvious behaviors, not a full manual) and a full driving skill for tools they know less (Redmine, Jira: API endpoints, time logging, statuses - the Redmine skill embedding Python stdlib-only scripts for the REST API), so that the agent handles every tool properly while the core stays tool-agnostic.
+**US-5.4 - Common interfaces with focused platform adapters**
+As a user of external tools, I want AI Manager's common project-management and code-hosting interfaces to delegate platform differences to focused adapters, so that workflows use one vocabulary while Redmine, Jira, Linear, GitLab, and GitHub retain the implementation depth they need. The Redmine adapter embeds Python standard-library scripts and calls the REST API directly.
 
 ## Epic 6 - Self-QA (maintainer tooling, not shipped)
 
