@@ -9,6 +9,13 @@ fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 assert_file() { [[ -f $1 ]] || fail "expected file: $1"; }
 assert_missing() { [[ ! -e $1 && ! -L $1 ]] || fail "expected missing: $1"; }
 assert_contains() { grep -Fqx -- "$2" "$1" || fail "expected $2 in $1"; }
+sha256() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    sha256sum "$1" | awk '{print $1}'
+  fi
+}
 
 mkdir -p "$work/source/skills/senpai-usage" "$work/source/skills/senpai-project-management/scripts"
 printf '#!/usr/bin/env bash\nprintf senpai\n' > "$work/source/senpai"
@@ -23,7 +30,7 @@ release="$work/release"
 mkdir -p "$release" "$work/bin"
 for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
   tar -czf "$release/senpai-$target.tar.gz" -C "$work/source" senpai skills
-  checksum=$(shasum -a 256 "$release/senpai-$target.tar.gz" | awk '{print $1}')
+  checksum=$(sha256 "$release/senpai-$target.tar.gz")
   printf '%s  senpai-%s.tar.gz\n' "$checksum" "$target" >> "$release/checksums.txt"
 done
 cat > "$work/bin/curl" <<'EOF'
@@ -50,6 +57,11 @@ chmod +x "$work/bin/curl"
 home="$work/home"
 prefix="$work/prefix"
 state="$work/state"
+# GitHub Linux runners export XDG_CONFIG_HOME. Pin all agent destinations so
+# this hermetic test does not accidentally install into the runner's home.
+export HOME="$home"
+export CODEX_HOME="$home/.codex"
+export XDG_CONFIG_HOME="$home/.config"
 PATH="$work/bin:$PATH" MOCK_RELEASE_DIR="$release" HOME="$home" "$root/installer.sh" --yes --agents codex --version v0.1.0 --repository example/senpai --prefix "$prefix" --state-dir "$state"
 assert_file "$prefix/bin/senpai"
 assert_file "$home/.codex/skills/senpai-usage/SKILL.md"
