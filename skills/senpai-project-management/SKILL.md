@@ -1,6 +1,6 @@
 ---
 name: senpai-project-management
-description: Perform common Senpai ticket operations—read, search, create, comment, transition, link, and log time—using a route selected from the project manifest and a focused adapter for Redmine, Jira, Linear, or a declared custom adapter.
+description: Perform common SenpAI ticket operations—read, search, create, comment, transition, link, and log time—using a route selected from the project manifest and a focused adapter for Redmine, Jira, Linear, or a declared custom adapter.
 ---
 
 # Project management interface
@@ -50,4 +50,4 @@ python3 scripts/redmine.py get-issue --url <url> --api-key-env <name> --id <tick
 Use server-returned ids for comments, status updates, time entries, and links.
 Redmine transition is `update-issue --status-id`; linking is
 `add-relation`. Do not guess status IDs: list issue statuses first. The script
-does not know Senpai policy and cannot substitute for it.
+does not know SenpAI policy and cannot substitute for it.

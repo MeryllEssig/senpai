@@ -22,7 +22,7 @@ top-level directories named `senpai-*` from `--skills-dir` are installed.
 
 Pass `--yes` in automation. Without `--agents`, it skips skills in noninteractive
 mode and prompts in an interactive terminal. Rerunning the command replaces the
-binary and the selected Senpai skills; it never updates custom skills.
+binary and the selected SenpAI skills; it never updates custom skills.
 
 The installer records exactly the binary and skill directories it owns in
 `$XDG_STATE_HOME/senpai/ownership.tsv` (default:

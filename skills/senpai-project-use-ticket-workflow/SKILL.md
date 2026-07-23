@@ -1,6 +1,6 @@
 ---
 name: senpai-project-use-ticket-workflow
-description: Default read-only Senpai ticket workflow. Use after Senpai has selected a ticket source and checked the effective ticket policy when the project declares no custom ticket workflow.
+description: Default read-only SenpAI ticket workflow. Use after SenpAI has selected a ticket source and checked the effective ticket policy when the project declares no custom ticket workflow.
 ---
 
 # Default ticket workflow

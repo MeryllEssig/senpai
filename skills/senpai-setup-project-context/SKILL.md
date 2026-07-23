@@ -1,6 +1,6 @@
 ---
 name: senpai-setup-project-context
-description: Set up Senpai project context in a new or existing folder by analyzing it first, interviewing the user, creating and validating a commented .senpai.jsonc manifest, and offering safe tool-installation guidance.
+description: Set up SenpAI project context in a new or existing folder by analyzing it first, interviewing the user, creating and validating a commented .senpai.jsonc manifest, and offering safe tool-installation guidance.
 ---
 
 # Set up project context

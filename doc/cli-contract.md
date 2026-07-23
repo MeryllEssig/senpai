@@ -1,7 +1,7 @@
-# Senpai CLI Contract — v1 foundation
+# SenpAI CLI Contract — v1 foundation
 
 This document fixes the public contract needed for the first vertical slice.
-It does not turn Senpai into an orchestration engine: `get` commands only
+It does not turn SenpAI into an orchestration engine: `get` commands only
 read the manifest and never contact a tracker or hosting service.
 Only `run` executes a process, and it executes capsules only.
 

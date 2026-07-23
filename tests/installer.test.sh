@@ -34,7 +34,7 @@ HOME="$home" "$root/installer.sh" --yes --binary "$work/source/senpai" --skills-
 assert_file "$home/.config/opencode/skills/senpai-usage/SKILL.md"
 assert_file "$home/.config/opencode/skills/senpai-project-management/scripts/example.py"
 
-# An unrelated custom skill survives uninstall; recorded Senpai paths do not.
+# An unrelated custom skill survives uninstall; recorded SenpAI paths do not.
 mkdir -p "$home/.codex/skills/acme-custom"
 printf 'custom\n' > "$home/.codex/skills/acme-custom/SKILL.md"
 HOME="$home" "$root/installer.sh" --uninstall --prefix "$prefix" --state-dir "$state"

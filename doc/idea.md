@@ -1,4 +1,4 @@
-# Senpai - Ideas to Explore
+# SenpAI - Ideas to Explore
 
 Parking lot for design ideas that are not yet decided. Unlike [notes.md](notes.md)
 (open questions and cross-cutting decisions), entries here are speculative

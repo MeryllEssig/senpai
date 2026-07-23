@@ -1,16 +1,16 @@
 <p align="center">
   <a href="https://github.com/MeryllEssig/senpai">
-    <img src="assets/senpai-logo.png" alt="Senpai logo" width="200">
+    <img src="assets/senpai-logo.png" alt="SenpAI logo" width="200">
   </a>
 </p>
 
-<h2 align="center"><a href="https://github.com/MeryllEssig/senpai">Senpai</a></h2>
+<h2 align="center"><a href="https://github.com/MeryllEssig/senpai">SenpAI</a></h2>
 
 <p align="center">
   Declarative, project-scoped context for AI coding agents.
 </p>
 
-Senpai gives an AI agent the context it needs to work in a project without
+SenpAI gives an AI agent the context it needs to work in a project without
 requiring that context to be repeated each session. A commented
 `.senpai.jsonc` manifest describes the project's trackers, code-hosting
 instances, repositories, environments, documentation, workflows, and safe
@@ -22,12 +22,12 @@ that can run commands and follow Markdown instructions.
 > [!IMPORTANT]
 > Never put secrets in `.senpai.jsonc` or `.senpai.local.jsonc`. Private
 > capsule values belong in the gitignored `.senpai/capsules.local.json` file,
-> where Senpai resolves and scrubs them during execution.
+> where SenpAI resolves and scrubs them during execution.
 
-## Why Senpai?
+## Why SenpAI?
 
 Project knowledge is often scattered between people, scripts, ticket trackers,
-code-hosting platforms, and environment-specific runbooks. Senpai keeps a
+code-hosting platforms, and environment-specific runbooks. SenpAI keeps a
 small, reviewable declaration beside the project so an agent can reliably:
 
 - route ticket and code-hosting tasks by declared role;
@@ -77,7 +77,7 @@ cargo build --release
 }
 ```
 
-From any directory inside that project, Senpai discovers the manifest by
+From any directory inside that project, SenpAI discovers the manifest by
 walking upward, like Git:
 
 ```sh
@@ -104,7 +104,7 @@ place. A personal `.senpai.local.jsonc` overlay is deep-merged locally for
 paths, preferences, or authentication configuration. Capsule values are kept
 separately because they may contain secrets.
 
-Senpai is deliberately not an orchestration engine: manifest queries never
+SenpAI is deliberately not an orchestration engine: manifest queries never
 contact external services. The only execution surface is `senpai run`, which
 runs a declared capsule.
 
@@ -128,7 +128,7 @@ single database query.
 ```
 
 `{query}` is supplied by the agent at invocation time. `{password}` is resolved
-inside Senpai from `.senpai/capsules.local.json` and is never printed in the
+inside SenpAI from `.senpai/capsules.local.json` and is never printed in the
 resolved command or process output.
 
 ```sh
@@ -164,7 +164,7 @@ exit codes, filtering, and output guarantees.
 
 ## Agent skills
 
-Senpai ships Markdown skills for agent ecosystems that support them:
+SenpAI ships Markdown skills for agent ecosystems that support them:
 
 - `senpai-use-project-context` — resolve a manifest and retrieve only the
   needed context.

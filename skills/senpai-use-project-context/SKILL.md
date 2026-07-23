@@ -1,6 +1,6 @@
 ---
 name: senpai-use-project-context
-description: Use a project's Senpai manifest to answer requests requiring declared project context or bounded operations, including tickets, code hosting, repositories, environments, documentation, logs, databases, tests, builds, and other capsules. Invoke manually when automatic skill selection is unavailable.
+description: Use a project's SenpAI manifest to answer requests requiring declared project context or bounded operations, including tickets, code hosting, repositories, environments, documentation, logs, databases, tests, builds, and other capsules. Invoke manually when automatic skill selection is unavailable.
 ---
 
 # Use project context

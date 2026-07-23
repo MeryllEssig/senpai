@@ -1,6 +1,6 @@
 ---
 name: senpai-manage-project-context
-description: Safely inspect, validate, evolve, and diagnose an existing Senpai project manifest, overlays, capsule values, and declared capabilities without exposing secrets or probing remote services unintentionally.
+description: Safely inspect, validate, evolve, and diagnose an existing SenpAI project manifest, overlays, capsule values, and declared capabilities without exposing secrets or probing remote services unintentionally.
 ---
 
 # Manage project context

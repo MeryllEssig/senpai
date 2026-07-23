@@ -1,11 +1,11 @@
 ---
 name: senpai-code-hosting
-description: Perform common Senpai code-hosting operations—read or create/update/comment/review/merge merge requests and read or trigger pipelines—using a role-qualified declared hosting instance and focused GitHub, GitLab, or custom adapter.
+description: Perform common SenpAI code-hosting operations—read or create/update/comment/review/merge merge requests and read or trigger pipelines—using a role-qualified declared hosting instance and focused GitHub, GitLab, or custom adapter.
 ---
 
 # Code-hosting interface
 
-Use only after Senpai has resolved the target repository, selected hosting by
+Use only after SenpAI has resolved the target repository, selected hosting by
 role, and returned the effective `code_changes` workflow policy. Operations:
 `read`, `create`, `update`, `comment`, `request_review`, `merge`,
 `pipeline_read`, `pipeline_trigger`. Verify that the selected hosting instance

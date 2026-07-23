@@ -1,4 +1,4 @@
-# Senpai - Technical Considerations
+# SenpAI - Technical Considerations
 
 This document details the technical topics behind the user stories. The design decisions below are settled; [notes.md](notes.md) tracks any topic still left open plus cross-cutting decisions with no home here.
 
@@ -118,7 +118,7 @@ Manifest support:
 
 - One manifest at the galaxy root describes the members and their `depends_on` edges. `role` is a free-form hint for the agent, not an enum the CLI interprets.
 - The CLI can then answer questions like "which repos does front_billing depend on" or "list the members", giving the agent enough structure to orchestrate cross-repo work (coordinated changes, dependency-aware navigation).
-- **Orchestration model (decided).** Senpai provides declared facts; the agent derives the actions. The manifest carries enough structure (members, dependencies, hosting instances and their roles, trackers) for the agent to understand by itself what a cross-repo request implies. Example: the user modified two repos of the galaxy and asks to "create the MRs"; the agent creates one merge request per modified repo, each on the right instance (see 1.5). No orchestration engine, no scripted actions.
+- **Orchestration model (decided).** SenpAI provides declared facts; the agent derives the actions. The manifest carries enough structure (members, dependencies, hosting instances and their roles, trackers) for the agent to understand by itself what a cross-repo request implies. Example: the user modified two repos of the galaxy and asks to "create the MRs"; the agent creates one merge request per modified repo, each on the right instance (see 1.5). No orchestration engine, no scripted actions.
 - **Composition (decided).** A sub-repo may carry its own manifest, but manifests never compose: the nearest one to the execution directory wins in full (see 1.2).
 
 ### 1.5 Code hosting: synchronized instances with roles
@@ -232,13 +232,13 @@ defaults to `deny`.
 }
 ```
 
-When an entire domain is omitted, Senpai uses
+When an entire domain is omitted, SenpAI uses
 `senpai-project-use-ticket-workflow` or
 `senpai-project-use-code-hosting-workflow` with the read-only default
 policy. A declared domain requires both `skill` and `policy`, so write
 permission can never be configured without project or company instructions.
 The shipped defaults explain safe read-only behavior; they do not silently
-invent project conventions. All skills distributed by Senpai use the
+invent project conventions. All skills distributed by SenpAI use the
 `senpai-` prefix. Custom project or company skills may use any valid name.
 If a declared custom workflow skill is unavailable, the agent stops and
 reports it; the read-only default is a fallback for an omitted domain, not for
@@ -254,7 +254,7 @@ The manifest separates passive project context from executable operations:
 - `environments` names logical targets such as `dev`, `preprod`, and `prod`. Each entry carries a label, optional URL, optional repository association, and an LLM-facing note. It does not contain SSH or log commands.
 - `docs` points to a local path, remote URL, or documentation repository. Reading local or public documentation does not require a project command.
 - `trackers` and `code_hosting` are complex external platforms driven through the common skills and their shipped or custom adapters (see 3.1).
-- `capsules` are the only abstraction for bounded project commands Senpai executes. Reading logs, querying a database, writing a CSV, running tests, starting detached services, and performing setup are all capsules (see 1.10). Rich external platforms such as trackers and code hosts remain driven by skills.
+- `capsules` are the only abstraction for bounded project commands SenpAI executes. Reading logs, querying a database, writing a CSV, running tests, starting detached services, and performing setup are all capsules (see 1.10). Rich external platforms such as trackers and code hosts remain driven by skills.
 
 There is deliberately no parallel resource inventory or second command section. Those abstractions would duplicate either a capsule's executable information or passive prose. A project that needs to expose a database declares the bounded operations it authorizes, such as `db-schema` or `db-query`. A complex sequence belongs in a reviewed project script invoked by a capsule.
 
@@ -269,7 +269,7 @@ precedence rules.
 ### 1.7 Secrets
 
 - The manifest **never contains secret values**. Tracker and hosting authentication references environment-variable names; capsule templates use placeholders for every private value.
-- **Secret values may live in one place: the never-committed local capsule-values file** (`.senpai/capsules.local.json`, gitignored; see 1.10). It may hold literal values or `$ENV_VAR` references and is consumed only inside Senpai's process. A capsule with no non-supplied placeholders needs no local entry.
+- **Secret values may live in one place: the never-committed local capsule-values file** (`.senpai/capsules.local.json`, gitignored; see 1.10). It may hold literal values or `$ENV_VAR` references and is consumed only inside SenpAI's process. A capsule with no non-supplied placeholders needs no local entry.
 - External tools differ in how they authenticate, so tracker sources and hosting instances may carry an **optional `auth` declaration** whose `mode` matches what the selected adapter supports. Secret values are forbidden in every mode; only references and mode names appear in the file. V1 supports exactly these modes:
   - `preconfigured` (the default when `auth` is absent): the external tool is assumed already configured on the machine, and authentication stays entirely in the user's hands. `glab` notably can be authenticated against several GitLab instances ahead of time.
   - `env`: credentials live in environment variables referenced by name (`"token_env": "GITLAB_AGENCY_TOKEN"`, `"api_key_env"`, `"password_env"`...). The adapter reads the named variable itself and never sends its value through the agent transcript.
@@ -291,7 +291,7 @@ A declarative routing table from intents to approaches:
 }
 ```
 
-- Rules are plain declarations (condition and instruction, both readable by the LLM). Senpai does not interpret them; the usage skill maps them to declared capsules or external tool skills.
+- Rules are plain declarations (condition and instruction, both readable by the LLM). SenpAI does not interpret them; the usage skill maps them to declared capsules or external tool skills.
 - **`then` is free text the agent maps (decided).** A capsule or skill named in a rule need not exist for schema validity. If it is absent, the agent reports the missing capability and proposes a manifest improvement rather than improvising an undeclared project operation.
 - This remains the place for cross-cutting or exceptional project instructions and guardrails ("never X on prod"). Routine ticket and code-hosting permissions and procedures belong in `workflows`, not duplicated rules.
 - **The resolved configuration is the authorization boundary (refined 2026-07-23).** Declared tracker sources and hosting instances establish valid targets; their effective workflow policy establishes permitted operations on those targets. Documentation locations and capsules remain authorized by declaration. Target services still enforce actual account permissions.
@@ -315,15 +315,15 @@ A `.senpai.local.jsonc` sitting **beside** the resolved `.senpai.jsonc` (same di
 
 ### 1.10 Capsules (all bounded project operations)
 
-A **capsule** is a bounded, non-interactive project command that **Senpai executes itself, in its own process**. It is the only manifest section that contains executable strings. Tests, builds, setup, bounded log reads, database queries, CSV operations, and deployments all use this primitive whether or not they need private values.
+A **capsule** is a bounded, non-interactive project command that **SenpAI executes itself, in its own process**. It is the only manifest section that contains executable strings. Tests, builds, setup, bounded log reads, database queries, CSV operations, and deployments all use this primitive whether or not they need private values.
 
 - **Capsules requiring no local values are first-class.** A capsule may have no placeholders, or only agent-supplied placeholders, and may omit `supplied` when the template has none. It requires no entry in the local values file.
-- **Private templates remain transcript-safe.** When non-supplied placeholders exist, Senpai reads their values inside its own process, resolves the template, runs it, and returns the declared template plus scrubbed stdout/stderr. The resolved command line never enters the agent transcript.
+- **Private templates remain transcript-safe.** When non-supplied placeholders exist, SenpAI reads their values inside its own process, resolves the template, runs it, and returns the declared template plus scrubbed stdout/stderr. The resolved command line never enters the agent transcript.
 
 - **The committed manifest holds the complete operation declaration.** Each capsule has a human-readable `label`, a `command` template, optional `type`, `cwd`, `repo`, `environment`, `mcp`, `access`, and `note`, plus optional `{variable}` placeholders.
-  - `cwd` is a normalized POSIX path relative to the manifest directory and may not escape it. `/` is the separator on every platform and backslashes are invalid. `.` names the manifest directory; absolute paths, empty segments, `.` segments, and `..` segments are invalid. Senpai sets the child working directory itself.
+  - `cwd` is a normalized POSIX path relative to the manifest directory and may not escape it. `/` is the separator on every platform and backslashes are invalid. `.` names the manifest directory; absolute paths, empty segments, `.` segments, and `..` segments are invalid. SenpAI sets the child working directory itself.
   - A capsule may name a `repo` plus an `environment`. These are validated discovery metadata governed by the scope-coherence rule in 1.6; they do not alter the command.
-  - `mcp` is optional informational metadata `{ server, tool? }` naming an analogous capability exposed by an already configured MCP server. Senpai does not dispatch to it, install it, assert argument equivalence, or apply capsule guarantees to it. The usage skill only surfaces the hint; a separate external-tool skill, when available, defines whether and how to use that tool. `senpai run` always executes `command`.
+  - `mcp` is optional informational metadata `{ server, tool? }` naming an analogous capability exposed by an already configured MCP server. SenpAI does not dispatch to it, install it, assert argument equivalence, or apply capsule guarantees to it. The usage skill only surfaces the hint; a separate external-tool skill, when available, defines whether and how to use that tool. `senpai run` always executes `command`.
   - **Committed / local boundary rule.** Whatever the author writes **literally** in the template is committed; whatever they turn into a `{variable}` placeholder is filled from elsewhere. The author draws the private/shared line field by field simply by this choice.
   - **Who fills each `{variable}`.** Variables declared in optional `supplied` are filled by the agent at call time. All other placeholders are filled from the local values file. Omitting `supplied` is equivalent to `[]`.
 
@@ -334,7 +334,7 @@ A **capsule** is a bounded, non-interactive project command that **Senpai execut
 
 - **Execution is argv-based, no shell (decided 2026-07-17).** The `command` template is split into argv **once at parse time** (shell-words rules), before substitution. Each non-executable argv element may contain at most one placeholder, optionally surrounded by a literal prefix or suffix such as `--password={password}`, and each placeholder name occurs exactly once in a template. Substitution changes that one element's contents and can never create another argument. An agent-supplied value containing quotes, `;` or `$(...)` is therefore data. Placeholders in the executable, multiple placeholders in one element, shell operators, pipes, and redirections are invalid; a reviewed script may be invoked when a project needs a complex sequence. The supplied names `help`, `json`, `manifest`, and `version` are reserved for CLI options.
 
-- **Template-visible, resolved-command-hidden output (decided 2026-07-20).** Every `senpai run` result, successful or not, includes the declared command template so the agent knows what shape of command was executed. It never includes the resolved command line. Some commands re-echo their arguments on error, which could leak a value on stderr; before returning, Senpai replaces, in **both stdout and stderr**, every occurrence of every resolved non-supplied value with its `{name}` placeholder. The exit code passes through untouched, so the agent keeps a usable diagnostic while the values stay masked.
+- **Template-visible, resolved-command-hidden output (decided 2026-07-20).** Every `senpai run` result, successful or not, includes the declared command template so the agent knows what shape of command was executed. It never includes the resolved command line. Some commands re-echo their arguments on error, which could leak a value on stderr; before returning, SenpAI replaces, in **both stdout and stderr**, every occurrence of every resolved non-supplied value with its `{name}` placeholder. The exit code passes through untouched, so the agent keeps a usable diagnostic while the values stay masked.
 - **Bounded execution and literal transcript protection.** Capsule output is buffered, capped
   by `max_output_bytes` (default 1 MiB), and killed after `timeout_seconds`
   (default 30 seconds). Scrubbing is deterministic longest-value-first literal
@@ -347,7 +347,7 @@ A **capsule** is a bounded, non-interactive project command that **Senpai execut
   but every run remains bounded.
 
 - **The frontier - what is NOT a capsule:**
-  - **Interactive or unbounded commands** are unsupported: no TTY, stdin conversation, foreground server, REPL, or follow-mode stream. Prefer finite equivalents (`logs --tail`, detached services, one-shot queries). Senpai does not add a second execution abstraction for these cases.
+  - **Interactive or unbounded commands** are unsupported: no TTY, stdin conversation, foreground server, REPL, or follow-mode stream. Prefer finite equivalents (`logs --tail`, detached services, one-shot queries). SenpAI does not add a second execution abstraction for these cases.
   - **Shell programs** are unsupported inside templates: no pipes, redirects, substitutions, or shell operators. A reviewed script may implement a complex sequence and be invoked as one argv-based capsule.
   - **Complex external platforms** (`glab`, `gh`, Jira, Redmine) remain driven through the common interface skills and their shipped or custom adapters rather than being reduced to capsule templates.
 
@@ -362,7 +362,7 @@ A **capsule** is a bounded, non-interactive project command that **Senpai execut
     material and is suitable for CI; `validate local` additionally checks that
     each non-supplied `{variable}` has a value in the local values file.
   - `doctor` validates the manifest, overlay, and local capsule configuration only. It does not resolve `$ENV` references, inspect installed skills, test credentials, or contact remote systems (see 2.1).
-  - Colleague onboarding: clone -> `senpai init` -> the colleague fills only private or machine-local stubs themselves, out of band -> `validate local` or `doctor` confirms configuration coherence. Shared non-secret coordinates are already committed in capsule commands. Runtime access problems are diagnosed by the agent from the scrubbed command error. Senpai never transfers a private value.
+  - Colleague onboarding: clone -> `senpai init` -> the colleague fills only private or machine-local stubs themselves, out of band -> `validate local` or `doctor` confirms configuration coherence. Shared non-secret coordinates are already committed in capsule commands. Runtime access problems are diagnosed by the agent from the scrubbed command error. SenpAI never transfers a private value.
 
 - **File topology (flat siblings):**
   - `.senpai.jsonc` - committed manifest (1.1).
@@ -390,7 +390,7 @@ The single entry point between manifests and agents. Responsibilities:
   **capsule field correspondence** and the syntax of `$ENV` references, but
   never whether those names currently resolve.
 - **doctor (decided 2026-07-20)**: a convenience aggregate that validates the resolved manifest, overlay, and local capsule configuration. It checks configuration only. It does not inspect environment-variable availability, installed skills, CLI sessions, credentials, connectivity, remote permissions, or any external service. The agent diagnoses execution failures from the returned error output.
-- **run**: execute a named capsule in Senpai's own process, optionally resolving private placeholders from the local values file, setting its declared cwd, and returning the declared template plus the scrubbed result (see 1.10).
+- **run**: execute a named capsule in SenpAI's own process, optionally resolving private placeholders from the local values file, setting its declared cwd, and returning the declared template plus the scrubbed result (see 1.10).
 
 The exact v1 subcommands, selectors, exit behavior and JSON envelope are
 defined in [CLI contract](cli-contract.md). They are intentionally small, but
@@ -408,9 +408,9 @@ stable enough to make the trackers-first vertical slice independently testable.
 - **Single Rust binary (decided).** The core installs as one command on `$PATH` with no runtime dependency, the lowest common denominator every agent ecosystem can call. Rust provides a solid JSON-Schema ecosystem for validation. The Redmine adapter scripts ship separately from the binary inside `senpai-project-management` and require Python 3.
 - **Supported release targets (decided 2026-07-20).** v1 publishes binaries for Linux and macOS on both x86_64 and ARM64. Windows is not a supported v1 target.
 - **Install via `curl | installer.sh` (decided).** The bootstrap installer detects the supported OS/CPU pair, downloads the requested release (latest by default), and verifies its published SHA-256 checksum before installing anything. A checksum mismatch is a hard failure. Until release distribution is added, the checked-in installer supports the corresponding local-build flow: an explicit executable `--binary` is copied locally and no network request is made.
-- **Agent-specific global skill installation (decided 2026-07-20).** In the same run, the installer asks which supported ecosystems to configure and copies the adapted skills directly into each selected ecosystem's canonical user-global directory: `$CODEX_HOME/skills` (default `~/.codex/skills`) for Codex, `~/.claude/skills` for Claude Code, `~/.gemini/skills` for Gemini CLI, and `~/.config/opencode/skills` for OpenCode. Every distributed skill name starts with `senpai-`; custom project and company skills are outside that namespace. The installer records exactly which Senpai files it owns.
-- **Updates rerun the installer (decided 2026-07-20).** The installer is idempotent. Rerunning it replaces the binary and unconditionally overwrites existing Senpai skills in the selected agent directories; local edits to those shipped skills are not preserved.
-- **Uninstall through the installer (decided 2026-07-20).** `installer.sh --uninstall` removes the binary and only the Senpai skill files recorded as installer-owned. It never removes project manifests, overlays, or capsule-values files. There is no `senpai update` or self-uninstall command.
+- **Agent-specific global skill installation (decided 2026-07-20).** In the same run, the installer asks which supported ecosystems to configure and copies the adapted skills directly into each selected ecosystem's canonical user-global directory: `$CODEX_HOME/skills` (default `~/.codex/skills`) for Codex, `~/.claude/skills` for Claude Code, `~/.gemini/skills` for Gemini CLI, and `~/.config/opencode/skills` for OpenCode. Every distributed skill name starts with `senpai-`; custom project and company skills are outside that namespace. The installer records exactly which SenpAI files it owns.
+- **Updates rerun the installer (decided 2026-07-20).** The installer is idempotent. Rerunning it replaces the binary and unconditionally overwrites existing SenpAI skills in the selected agent directories; local edits to those shipped skills are not preserved.
+- **Uninstall through the installer (decided 2026-07-20).** `installer.sh --uninstall` removes the binary and only the SenpAI skill files recorded as installer-owned. It never removes project manifests, overlays, or capsule-values files. There is no `senpai update` or self-uninstall command.
 
 ## 3. Skills
 
@@ -421,7 +421,7 @@ stable enough to make the trackers-first vertical slice independently testable.
 - **Built-in guardrail**: if an action requires an external tool or API adapter the agent cannot authenticate to without reading secret values itself, it stops entirely and asks the user how to proceed (see 1.7). If an operation was attempted, the agent diagnoses the failure from its scrubbed error output; `doctor` does not probe authentication.
 - **Manifest evolution feedback (decided).** When the skill hits a gap (a needed capsule or fact the manifest does not declare), it **proposes a concrete manifest edit for the user to accept and never applies one silently**. The user stays in control of what the manifest gains.
 - **Progressive discovery**: the always-loaded surface is a short description plus the instruction to call the CLI. Everything else lives in scoped CLI output or deeper skill references loaded only when needed.
-- **Common interface skills (decided 2026-07-23).** Senpai ships `senpai-project-management` for tickets and `senpai-code-hosting` for code changes and pipelines. They define stable common capability names and dispatch to focused platform adapters selected from `trackers.type` or `code_hosting.platform`. A source or instance's optional `skill` overrides only that technical adapter. A custom workflow belongs in `workflows`, keeping platform mechanics separate from project procedure.
+- **Common interface skills (decided 2026-07-23).** SenpAI ships `senpai-project-management` for tickets and `senpai-code-hosting` for code changes and pipelines. They define stable common capability names and dispatch to focused platform adapters selected from `trackers.type` or `code_hosting.platform`. A source or instance's optional `skill` overrides only that technical adapter. A custom workflow belongs in `workflows`, keeping platform mechanics separate from project procedure.
 - **Workflow skills.** The usage skill loads the configured workflow, or the shipped `senpai-project-use-ticket-workflow` / `senpai-project-use-code-hosting-workflow` default, after checking the effective policy. The workflow gives instructions; it cannot grant permission. This is orchestration by the usage skill, not implicit skill-to-skill invocation.
 - **Adapter depth varies by tool.** For CLIs the models already know well (`gh`, `glab`), adapters carry only multi-instance authentication, host selection, and non-obvious pitfalls. For less familiar APIs such as Redmine and Jira, adapters carry progressively loaded references for endpoints, time logging, statuses, and pagination.
 - **Embedded Redmine API scripts.** Redmine has no maintained canonical CLI, so its adapter lives inside the `senpai-project-management` skill's `scripts/` directory and drives the REST API directly. Scripts are **Python 3, standard library only** (no `pip install`), with robust JSON, pagination, timeouts, bounded output, credential scrubbing, and HTTP error handling. Each script reads its credentials from the named environment variable itself, so the secret never transits through the transcript.
@@ -433,7 +433,7 @@ A guided, didactic process to bootstrap a manifest in any folder (repo or not):
 1. **Analyze first.** Inspect the current folder: single repo, multi-repo galaxy, plain directory; detect hints (`.git`, CI configs, docker-compose services, existing docs folders) to pre-fill the interview.
 2. **Interview.** Ask where project information lives and which bounded operations should be exposed: trackers, repos, environments, documentation, tests, builds, setup, logs, data queries, exports, and deployments. Never read secret values; ask only for placeholder names and where the user will configure them.
 3. **Write and validate** the manifest, with comments explaining each section.
-4. **Offer tool assistance.** Propose installing or configuring external CLIs the manifest relies on (`glab`, `gh`, a Jira CLI), with the user's consent. Redmine needs no separate client: its adapter drives the REST API directly through embedded scripts (3.1); Python 3 and the installed Senpai skill are still prerequisites.
+4. **Offer tool assistance.** Propose installing or configuring external CLIs the manifest relies on (`glab`, `gh`, a Jira CLI), with the user's consent. Redmine needs no separate client: its adapter drives the REST API directly through embedded scripts (3.1); Python 3 and the installed SenpAI skill are still prerequisites.
 5. **Explain.** State what was created, what works now, and what the user must do (define the variable in their shell profile, restart the agent so it picks up the environment, restart a service). Didactic tone, in the user's language.
 
 **Joining an existing manifest (decided).** When a colleague clones a repo that already carries a committed manifest, there is no separate wizard: they run `senpai init`, fill the generated capsule-value stubs themselves, and use `validate local` or `doctor` to validate the resulting configuration. Neither command checks whether an environment variable currently exists or whether a credential works. If later execution fails, the agent diagnoses the scrubbed error and asks the user for whatever access or setup is missing without reading secret values.
@@ -446,12 +446,12 @@ A guided, didactic process to bootstrap a manifest in any folder (repo or not):
 
 ### 3.4 Conversation QA skill (internal, not shipped)
 
-A maintainer-only skill for the QA of Senpai itself. It lives in this repository but is never delivered to end users.
+A maintainer-only skill for the QA of SenpAI itself. It lives in this repository but is never delivered to end users.
 
 - **Input**: a conversation transcript provided by the maintainer, in the format of the ecosystem that produced it (formats differ per agent; identifying the ecosystem is the skill's first step).
 - **Detection**: it walks the conversation and flags every inefficiency, including at least: failed or retried commands; workarounds invented because a declared fact was missing or wrong; questions to the user that the manifest should have answered; the whole manifest dumped where a scoped query would have done; wrong targets (ticket in the wrong tracker, time booked on the wrong source, merge request on the wrong instance, wrong environment); authentication dead-ends; ignored rules or guardrails.
-- **Root-cause classification**: each finding is attributed to one of: (a) project-side, the manifest is wrong or incomplete at a specific spot; (b) Senpai-side, a gap in the schema, the CLI output, a skill's wording, or a missing tool guidance note; (c) external, outside Senpai's scope.
-- **Output**: a findings report with, for each finding, a concrete remediation proposal (a manifest edit, an Senpai change naming the affected area, or a tool guidance note to add).
+- **Root-cause classification**: each finding is attributed to one of: (a) project-side, the manifest is wrong or incomplete at a specific spot; (b) SenpAI-side, a gap in the schema, the CLI output, a skill's wording, or a missing tool guidance note; (c) external, outside SenpAI's scope.
+- **Output**: a findings report with, for each finding, a concrete remediation proposal (a manifest edit, an SenpAI change naming the affected area, or a tool guidance note to add).
 - **Transcript handling (decided).** The skill is maintainer-only and run locally by the maintainer, who is responsible for their own usage. No anonymization is imposed by the skill; reports stay local. (An end-user-facing tool would need a different stance, but this skill is never shipped.)
 
 ### 3.5 Explanatory guidance (cross-cutting)
@@ -464,15 +464,15 @@ All setup and management skills must:
 
 ## 4. Agent-agnosticism
 
-- **Compatibility baseline**: any ecosystem that can (a) run a CLI and (b) follow markdown instructions can use Senpai. That covers Claude Code, Codex, Gemini CLI, OpenCode, and most others.
-- Skills are authored once in plain markdown with minimal frontmatter, then adapted to each ecosystem's convention. Auto-trigger capabilities differ; the fallback is manual invocation or a pointer in `AGENTS.md` telling the agent to query Senpai capabilities.
+- **Compatibility baseline**: any ecosystem that can (a) run a CLI and (b) follow markdown instructions can use SenpAI. That covers Claude Code, Codex, Gemini CLI, OpenCode, and most others.
+- Skills are authored once in plain markdown with minimal frontmatter, then adapted to each ecosystem's convention. Auto-trigger capabilities differ; the fallback is manual invocation or a pointer in `AGENTS.md` telling the agent to query SenpAI capabilities.
 - Nothing in the manifest is agent-specific: it describes the project and its bounded operations, not the agent.
 
 ## 5. Security summary
 
-- No secret values in manifests, overlays, CLI output, or conversations. The one place a real secret may sit is the never-committed local capsule-values file (`.senpai/capsules.local.json`, 1.10), read only inside Senpai's process.
+- No secret values in manifests, overlays, CLI output, or conversations. The one place a real secret may sit is the never-committed local capsule-values file (`.senpai/capsules.local.json`, 1.10), read only inside SenpAI's process.
 - Capsules are the only executable manifest section. They run argv-based without a shell, stdin, or TTY, with bounded output and time.
 - **Private capsule execution.** `senpai run` resolves non-supplied placeholders internally and scrubs their literal values from stdout and stderr. Capsules without local values follow the same execution path.
 - **Configuration means authorization.** Declared targets define where the agent may act; ticket and code-change workflow policies define which common operations are allowed, denied, or require confirmation. Workflow instructions never broaden those permissions. Documentation locations and capsules remain authorized by declaration, and `access` remains advisory only.
-- **No trust machinery (decided 2026-07-17).** Senpai ships no first-use confirmation and no change detection: a committed manifest is vetted like any other committed file, by the team's own review process. Ensuring the declared commands are safe is the developers' responsibility. Senpai targets teams and companies with an internal trust process; the open-source-drive-by-contribution threat model is out of scope.
+- **No trust machinery (decided 2026-07-17).** SenpAI ships no first-use confirmation and no change detection: a committed manifest is vetted like any other committed file, by the team's own review process. Ensuring the declared commands are safe is the developers' responsibility. SenpAI targets teams and companies with an internal trust process; the open-source-drive-by-contribution threat model is out of scope.
 - Placing the manifest in a parent directory keeps it fully private when the repo cannot or should not carry it.

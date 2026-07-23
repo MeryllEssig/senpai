@@ -1,4 +1,4 @@
-# Senpai - User Stories
+# SenpAI - User Stories
 
 Format: **As** (who), **I want** (what), **so that** (why).
 
@@ -40,7 +40,7 @@ As a developer whose external commands authenticate in different ways, I want tr
 Constraint: secret values in the manifest are forbidden in every mode; only references (variable names) and mode names may appear.
 
 **US-1.12 - Declare bounded project operations**
-As a developer, I want to declare every bounded project command Senpai should execute as a capsule, including commands requiring no local values such as tests or bounded log reads, so that the AI discovers and executes one consistent primitive through the CLI. Rich external platforms such as trackers and code hosts remain driven by skills.
+As a developer, I want to declare every bounded project command SenpAI should execute as a capsule, including commands requiring no local values such as tests or bounded log reads, so that the AI discovers and executes one consistent primitive through the CLI. Rich external platforms such as trackers and code hosts remain driven by skills.
 Constraint: capsules are non-interactive, have bounded output and a timeout, execute without a shell, and may use a structured working directory. Interactive shells, foreground servers, follow-mode logs, and other unbounded processes are unsupported.
 
 **US-1.13 - Onboard onto an existing manifest**
@@ -52,11 +52,11 @@ As a developer, I want a personal, gitignored overlay (`.senpai.local.jsonc`) be
 
 **US-1.15 - Mark a capsule read-only**
 As a developer, I want to declare an optional structured `"access": "read-only"` marker on a capsule (for example a production database query), so that the LLM receives a concise usage hint without mistaking it for an enforced permission.
-Constraint: `access` is advisory only. Senpai returns it when present but never interprets or enforces it.
+Constraint: `access` is advisory only. SenpAI returns it when present but never interprets or enforces it.
 
 **US-1.16 - Run a templated command without leaking private values**
-As a developer whose database access needs a password, I want a capsule's `command` template to accept optional `{variable}` placeholders, where the agent-supplied ones (like the SQL query) are marked `supplied` and the rest are filled from a never-committed local values file, so that `senpai run` executes it in Senpai's own process and returns the declared template plus scrubbed output while the resolved private values never enter the agent's transcript.
-Constraint: the manifest holds no secret values; real values live only in the gitignored `.senpai/capsules.local.json`, read only inside Senpai's process.
+As a developer whose database access needs a password, I want a capsule's `command` template to accept optional `{variable}` placeholders, where the agent-supplied ones (like the SQL query) are marked `supplied` and the rest are filled from a never-committed local values file, so that `senpai run` executes it in SenpAI's own process and returns the declared template plus scrubbed output while the resolved private values never enter the agent's transcript.
+Constraint: the manifest holds no secret values; real values live only in the gitignored `.senpai/capsules.local.json`, read only inside SenpAI's process.
 
 **US-1.17 - Scaffold my local capsule values on join**
 As a developer who just cloned a project that declares capsules, I want `senpai init` to scaffold the local values file with one stub per private or machine-local non-supplied `{variable}`, and `validate local` or `doctor` to confirm every required entry exists and is structurally valid, so that I can complete my own setup out of band without any secret being transferred to me. Shared non-secret coordinates belong literally in the committed command.
@@ -68,7 +68,7 @@ As a developer whose tracker or code host needs a custom technical integration, 
 As a developer on a galaxy or monorepo, I want a capsule to name an optional `repo`, plus an optional `environment`, so that the agent can discover the correct operation for the current repository and target without guessing from naming conventions.
 
 **US-1.20 - Declare permissions and working instructions separately**
-As a developer, I want ticket and code-change workflows to combine a structured `allow` / `confirm` / `deny` policy with a workflow skill containing my project or company instructions, so that Senpai knows both what it may do and how I expect the work to be performed.
+As a developer, I want ticket and code-change workflows to combine a structured `allow` / `confirm` / `deny` policy with a workflow skill containing my project or company instructions, so that SenpAI knows both what it may do and how I expect the work to be performed.
 Constraint: a workflow skill may narrow or explain the declared policy but never broaden it. With no workflow declaration, reads are allowed and every write is denied.
 
 ## Epic 2 - Query the context (the CLI)
@@ -113,7 +113,7 @@ As a user, I want the agent to run the CLI from the session's launch directory a
 As a user, I want the same ticket and code-change operations regardless of whether a project uses Redmine, Jira, Linear, GitLab, or GitHub, so that my workflow remains stable while platform-specific adapters handle API and CLI differences.
 
 **US-3.7 - Follow the project's working procedure within its permissions**
-As a user, I want Senpai to load the project's ticket or code-hosting workflow instructions after checking its structured policy, so that conventions such as transitioning a completed ticket, adding the merge-request link, or selecting reviewers are followed without granting undeclared permissions.
+As a user, I want SenpAI to load the project's ticket or code-hosting workflow instructions after checking its structured policy, so that conventions such as transitioning a completed ticket, adding the merge-request link, or selecting reviewers are followed without granting undeclared permissions.
 
 ## Epic 4 - Set up and maintain (management skills)
 
@@ -136,12 +136,12 @@ As a user, I want every setup and management skill to explain what it does and w
 As a user, I want a skill that reviews my project and my habits to suggest things that could be automated but are not yet, so that the setup keeps improving over time.
 
 **US-4.7 - Install a verified binary and the skills for my agents**
-As a Linux or macOS user on x86_64 or ARM64, I want the installer to verify the release SHA-256 checksum and copy Senpai skills into the canonical global directory of each agent ecosystem I select, so that one installation safely configures Codex, Claude Code, Gemini CLI, or OpenCode for all my projects.
-Constraint: every skill distributed by Senpai has an `senpai-` prefix. Project- and company-owned custom skills may use any valid name.
+As a Linux or macOS user on x86_64 or ARM64, I want the installer to verify the release SHA-256 checksum and copy SenpAI skills into the canonical global directory of each agent ecosystem I select, so that one installation safely configures Codex, Claude Code, Gemini CLI, or OpenCode for all my projects.
+Constraint: every skill distributed by SenpAI has an `senpai-` prefix. Project- and company-owned custom skills may use any valid name.
 
 **US-4.8 - Predictable update and uninstall**
-As a user, I want to update Senpai by rerunning the idempotent installer and uninstall it with `installer.sh --uninstall`, so that lifecycle management has one entry point.
-Constraint: updates overwrite installed Senpai skills rather than preserving local edits; uninstall removes only the binary and installer-owned skill files, never project configuration.
+As a user, I want to update SenpAI by rerunning the idempotent installer and uninstall it with `installer.sh --uninstall`, so that lifecycle management has one entry point.
+Constraint: updates overwrite installed SenpAI skills rather than preserving local edits; uninstall removes only the binary and installer-owned skill files, never project configuration.
 
 ## Epic 5 - Project-wide constraints
 
@@ -155,14 +155,14 @@ As a user, I want runtime interactions to happen in my language with no default 
 As a maintainer, I want the core to stay agnostic of any specific tracker or tool, with bounded project operations represented uniformly as capsules and complex platforms handled by optional skills, so that the system survives tool churn.
 
 **US-5.4 - Common interfaces with focused platform adapters**
-As a user of external tools, I want Senpai's common project-management and code-hosting interfaces to delegate platform differences to focused adapters, so that workflows use one vocabulary while Redmine, Jira, Linear, GitLab, and GitHub retain the implementation depth they need. The Redmine adapter embeds Python standard-library scripts and calls the REST API directly.
+As a user of external tools, I want SenpAI's common project-management and code-hosting interfaces to delegate platform differences to focused adapters, so that workflows use one vocabulary while Redmine, Jira, Linear, GitLab, and GitHub retain the implementation depth they need. The Redmine adapter embeds Python standard-library scripts and calls the REST API directly.
 
 ## Epic 6 - Self-QA (maintainer tooling, not shipped)
 
-An internal skill that lives in this repository but is never delivered to end users: it exists to QA Senpai itself against real usage.
+An internal skill that lives in this repository but is never delivered to end users: it exists to QA SenpAI itself against real usage.
 
 **US-6.1 - Analyze a conversation for inefficiencies**
-As the Senpai maintainer, I want an internal skill that takes a conversation transcript as input (in the format of whichever agent ecosystem produced it) and flags every moment the agent was inefficient (a failed command, a missing declared fact that forced a workaround, a question the manifest should have answered, a wrong target, and similar), so that real usage sessions become QA material for Senpai.
+As the SenpAI maintainer, I want an internal skill that takes a conversation transcript as input (in the format of whichever agent ecosystem produced it) and flags every moment the agent was inefficient (a failed command, a missing declared fact that forced a workaround, a question the manifest should have answered, a wrong target, and similar), so that real usage sessions become QA material for SenpAI.
 
 **US-6.2 - Root-cause classification and remediation proposals**
-As the Senpai maintainer, I want each flagged inefficiency to come with a root cause (the project's manifest is wrong or incomplete at a specific spot, Senpai itself is imperfect at a specific spot, or the cause is external) and a concrete remediation proposal, so that every analyzed conversation turns into actionable improvements.
+As the SenpAI maintainer, I want each flagged inefficiency to come with a root cause (the project's manifest is wrong or incomplete at a specific spot, SenpAI itself is imperfect at a specific spot, or the cause is external) and a concrete remediation proposal, so that every analyzed conversation turns into actionable improvements.

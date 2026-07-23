@@ -1,6 +1,6 @@
 ---
 name: senpai-conversation-qa
-description: Maintainer-only local QA for Senpai. Analyze a supplied agent conversation transcript for project-context inefficiencies, classify each root cause, and propose concrete remediation without contacting external services.
+description: Maintainer-only local QA for SenpAI. Analyze a supplied agent conversation transcript for project-context inefficiencies, classify each root cause, and propose concrete remediation without contacting external services.
 ---
 
 # Conversation QA (maintainers only)
@@ -19,7 +19,7 @@ For each finding classify one root cause:
 
 - **Project-side**: cite the exact missing/wrong manifest field or project
   instruction and propose a concrete manifest change.
-- **Senpai-side**: cite the affected schema, CLI behavior, shipped skill, or
+- **SenpAI-side**: cite the affected schema, CLI behavior, shipped skill, or
   adapter guidance and propose a product change.
 - **External**: state the service/tool limitation and propose a guidance note
   or human process where appropriate.

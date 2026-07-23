@@ -1,11 +1,11 @@
 // =============================================================================
 // .senpai.jsonc - REFERENCE EXAMPLE ("golden" manifest)
 // =============================================================================
-// This file is the reference example for the Senpai manifest format. It
+// This file is the reference example for the SenpAI manifest format. It
 // freezes the schema: every feature described in the spec documents appears
 // here at least once, with the exact field shapes the docs define.
 //
-//   - doc/goal.md                     what Senpai is and is not
+//   - doc/goal.md                     what SenpAI is and is not
 //   - doc/user-stories.md             who needs what and why
 //   - doc/technical-considerations.md field shapes (sections 1.1 to 1.10)
 //   - doc/notes.md                    cross-cutting process notes
@@ -15,15 +15,15 @@
 //
 // Ground rules the format guarantees:
 //   - Capsules are the one executable surface. They are bounded,
-//     non-interactive commands Senpai runs without a shell. A capsule may
+//     non-interactive commands SenpAI runs without a shell. A capsule may
 //     require no local values or may use private placeholders resolved inside
-//     Senpai.
+//     SenpAI.
 //     No executable strings appear anywhere else in the manifest.
 //   - No secret values in THIS file. Credentials are referenced by environment
 //     variable NAME only (for example "password_env"), never by value. The one
 //     place a real secret value may sit is the never-committed local values
 //     file ".senpai/capsules.local.json" (gitignored), read only inside
-//     Senpai's own process when it runs a capsule; its shape is shown in
+//     SenpAI's own process when it runs a capsule; its shape is shown in
 //     comments next to the "capsules" block below.
 //   - JSONC. Comments are encouraged: the file should explain itself to
 //     teammates and to AI agents alike.
@@ -196,7 +196,7 @@
   // explicit user confirmation for the concrete operation. An omitted "read"
   // defaults to "allow"; every other omitted capability defaults to "deny".
   //
-  // If an entire domain is omitted, Senpai loads its read-only default:
+  // If an entire domain is omitted, SenpAI loads its read-only default:
   // senpai-project-use-ticket-workflow or
   // senpai-project-use-code-hosting-workflow. A declared domain requires
   // both "skill" and "policy". Custom skill names are free.
@@ -299,9 +299,9 @@
   },
 
   // ---------------------------------------------------------------------------
-  // Capsules: every bounded project command Senpai runs (1.10)
+  // Capsules: every bounded project command SenpAI runs (1.10)
   // ---------------------------------------------------------------------------
-  // A capsule is a bounded, non-interactive command Senpai executes itself.
+  // A capsule is a bounded, non-interactive command SenpAI executes itself.
   // It may require no local values and contain no placeholders at all, as the
   // test and log examples below do. Private templates retain transcript
   // protection.
@@ -315,7 +315,7 @@
   // template is split into argv once, then each {placeholder} is substituted
   // inside its existing element. It can never create another argument, and no
   // shell re-interprets it: quotes or $(...) are data. Consequence: no pipes or
-  // redirections inside a template. Before returning, Senpai scrubs both
+  // redirections inside a template. Before returning, SenpAI scrubs both
   // stdout and stderr, replacing every resolved non-supplied value with its
   // {name}, so an error that re-echoes its arguments cannot leak a value.
   //
@@ -339,19 +339,19 @@
       "environment": "preprod",
       "repo": "api_billing",
       // Optional informational pointer to an analogous external MCP tool.
-      // Senpai neither dispatches to it nor applies capsule guarantees to
+      // SenpAI neither dispatches to it nor applies capsule guarantees to
       // it; `senpai run` always executes `command`.
       "mcp": { "server": "mysql", "tool": "query" },
-      // Optional advisory hint for the LLM; Senpai does not enforce it.
+      // Optional advisory hint for the LLM; SenpAI does not enforce it.
       "access": "read-only",
-      "note": "One-shot SQL against preprod, read-only. Senpai returns the declared template and scrubbed rows, so the password never enters the transcript.",
+      "note": "One-shot SQL against preprod, read-only. SenpAI returns the declared template and scrubbed rows, so the password never enters the transcript.",
       // Shared coordinates stay committed for zero-guess onboarding. {query}
       // is supplied by the AGENT; only {password} comes from local values.
       // Inline substitution stays inside this one pre-parsed argv element.
       "command": "mysql --host=db.preprod.acme.example --user=acme_ro --password={password} acme_shop --execute {query}",
       // Placeholders filled by the agent at call time (everything else is local).
       "supplied": ["query"],
-      // Safety limits applied by Senpai. Output is buffered and scrubbed;
+      // Safety limits applied by SenpAI. Output is buffered and scrubbed;
       // a larger result must be narrowed by the caller rather than streamed.
       "timeout_seconds": 30,
       "max_output_bytes": 1048576
@@ -403,7 +403,7 @@
   // ---------------------------------------------------------------------------
   // A declarative routing table from intents to approaches. "if" is a
   // plain-language condition the agent recognizes in the user's request;
-  // "then" is the instruction to follow. Senpai does not interpret rules;
+  // "then" is the instruction to follow. SenpAI does not interpret rules;
   // the agent maps them to a declared capsule or external tool skill. Routine
   // ticket and code-hosting policy and procedure live in "workflows"; rules
   // remain for cross-cutting or exceptional guardrails.

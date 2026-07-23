@@ -1,6 +1,6 @@
-# Senpai
+# SenpAI
 
-Senpai is a **project-scoped, declarative context layer for AI coding agents**.
+SenpAI is a **project-scoped, declarative context layer for AI coding agents**.
 
 Each project carries a single manifest file, `.senpai.jsonc`, that declares the context an AI agent needs to interact with the project's ecosystem: ticket trackers, code hosting, repositories, logical environments, documentation locations, bounded project-operation capsules, and rules mapping intents to capsules or external-tool skills.
 

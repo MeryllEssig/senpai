@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install a locally built Senpai binary and its shipped skills.
+# Install a locally built SenpAI binary and its shipped skills.
 #
 # Release download/checksum verification intentionally lives outside this local
 # installer.  Supply an already-built binary with --binary.
@@ -14,10 +14,10 @@ usage() {
 Usage: installer.sh --binary PATH [options]
        installer.sh --uninstall [options]
 
-Install a local Senpai build and optionally copy its shipped skills.
+Install a local SenpAI build and optionally copy its shipped skills.
 
 Options:
-  --binary PATH       Executable local Senpai binary (required for install)
+  --binary PATH       Executable local SenpAI binary (required for install)
   --skills-dir PATH   Directory containing senpai-* skill directories (default: ./skills)
   --agents LIST       Comma-separated: codex,claude,gemini,opencode,all,none
   --prefix PATH       Binary prefix (default: $SENPAI_INSTALL_PREFIX or ~/.local)
@@ -83,7 +83,7 @@ safe_owned_path() {
 }
 
 uninstall_owned() {
-  [[ -f $state_file ]] || { note "Senpai is not installed by this installer ($state_file not found)."; return; }
+  [[ -f $state_file ]] || { note "SenpAI is not installed by this installer ($state_file not found)."; return; }
   local version kind path extra
   IFS=$'\t' read -r version < "$state_file" || fail "cannot read ownership state"
   [[ $version == "version=$STATE_VERSION" ]] || fail "unsupported ownership-state version"
@@ -103,7 +103,7 @@ uninstall_owned() {
   done < <(tail -n +2 "$state_file")
   rm -f -- "$state_file"
   rmdir -- "$state_dir" 2>/dev/null || true
-  note "Senpai uninstall complete."
+  note "SenpAI uninstall complete."
 }
 
 if $uninstall; then
@@ -150,7 +150,7 @@ select_agents() {
 }
 
 if [[ -z $agents && $assume_yes == false && -t 0 ]]; then
-  read -r -p 'Install Senpai skills for which agents? [codex,claude,gemini,opencode,all,none] ' agents
+  read -r -p 'Install SenpAI skills for which agents? [codex,claude,gemini,opencode,all,none] ' agents
 fi
 select_agents "$agents"
 
@@ -217,7 +217,7 @@ mv -f -- "$temporary_state" "$state_file"
 note "Installed $PROGRAM_NAME to $destination_binary"
 if [[ ${#selected[@]} -gt 0 ]]; then
   selected_label=$(IFS=,; printf '%s' "${selected[*]}")
-  note "Installed Senpai skills for: $selected_label"
+  note "Installed SenpAI skills for: $selected_label"
 else
   note "No agent skills selected."
 fi
