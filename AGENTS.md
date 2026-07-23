@@ -6,12 +6,17 @@ Each project carries a single manifest file, `.senpai.jsonc`, that declares the 
 
 ## Documentation
 
-* [Goals](./doc/goal.md)
-* [User Stories](./doc/user-stories.md)
-* [Technical considerations](./doc/technical-considerations.md)
-* [CLI contract](./doc/cli-contract.md)
-* [Manifest JSON Schema](./schema/senpai.schema.json)
-* [Example manifest](./doc/reference-manifest.jsonc)
-* [Example capsule values](./doc/reference-capsule.jsonc)
-* [Notes](./doc/notes.md)
-* [Ideas to explore](./doc/idea.md)
+- [Goals](./doc/goal.md)
+- [User Stories](./doc/user-stories.md)
+- [Technical considerations](./doc/technical-considerations.md)
+- [CLI contract](./doc/cli-contract.md)
+- [Manifest JSON Schema](./schema/senpai.schema.json)
+- [Example manifest](./doc/reference-manifest.jsonc)
+- [Example capsule values](./doc/reference-capsule.jsonc)
+- [Notes](./doc/notes.md)
+- [Ideas to explore](./doc/idea.md)
+
+## Notes
+
+- Always conventional commit.
+- If you install/update the project when in development, always try to install from the remote (github) by default.
