@@ -17,6 +17,25 @@ environments, documentation, workflows/policies, and bounded operations
 (tests, builds, setup, logs, data queries, exports, deployments). Let the user
 describe unusual arrangements rather than forcing a preset.
 
+Present the first interview round as a compact, evidence-led inventory, not a
+platform-by-platform checklist. Separate facts observed in the folder from the
+few decisions still needed. Group questions by integration and ask only for
+fields that cannot be inferred: target URL/project, operational roles, and
+authentication mode. For authentication, ask for the mode and, only for
+`env`, the variable name; never ask for a value. Present one small workflow
+policy matrix after the integrations are identified, with a conservative
+recommended default, instead of asking permissions separately for each tool.
+
+Do not ask for `ticket_id_patterns` as setup data. Infer a candidate only from
+clear evidence: an observed ticket reference, a documented native identifier
+format, or a source whose platform and identifier format are both unambiguous.
+For example, an observed bare Redmine issue number supports
+`^[1-9][0-9]*$`. Include inferred patterns and their evidence in the proposed
+manifest design; the user's acceptance of that design authorizes writing them.
+If no evidence exists, omit the optional field and say that the first safely
+resolved ticket format can be added during a later, authorized manifest
+update. Never fabricate a pattern merely to make the manifest look complete.
+
 Create a commented `.senpai.jsonc` only after the user accepts the design. Use
 the repository's reference manifest and schema as the field-shape authority.
 Every executable declaration must be a bounded, non-interactive capsule; never

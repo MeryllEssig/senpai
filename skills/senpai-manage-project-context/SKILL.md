@@ -23,5 +23,12 @@ after adding environment variables, and to re-login/restart shells when the
 relevant tool needs it.
 
 Propose rather than silently add a capability discovered during ordinary work.
-For lifecycle changes, update the declared tracker source project; for routing
-changes, update roles/patterns/priorities rather than relying on object order.
+When a manifest creation or update is already authorized, preserve a ticket
+identifier format learned from clear evidence on the selected source: add the
+narrowest reusable `ticket_id_patterns` entry and explain its evidence. A
+successful lookup is evidence only when the source was selected without
+ambiguity; never infer a pattern from a guessed source. During an unrelated
+read-only request, report the exact proposed pattern instead of editing the
+manifest. For lifecycle changes, update the declared tracker source project;
+for routing changes, update roles/patterns/priorities rather than relying on
+object order.

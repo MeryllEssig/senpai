@@ -13,9 +13,15 @@ not replace project workflow instructions or platform adapters.
    and offer setup. Never change directory to find another manifest.
 2. Run `senpai summary --manifest <manifest_path> --json`. Use scoped `get` or
    `list` commands after that; never dump the manifest.
-3. Match relevant declared rules, then query only the needed capability. A
-   missing declaration is a gap: propose a concrete manifest edit, but do not
-   invent or silently apply one.
+3. Match relevant declared rules, then query only the needed capability. For a
+   ticket id, try `get ticket-route` first. If it has no match, use
+   `get tracker --role ticket_details` only when that role has exactly one
+   declared source; this is a deterministic role fallback, not a guess. Report
+   the missing routing pattern and propose the narrowest pattern supported by
+   the observed id. Do not edit the manifest during an unrelated read; use
+   `senpai-manage-project-context` when a manifest update is authorized. Zero
+   or multiple role candidates remain a gap or ambiguity and must not be
+   bypassed.
 4. Run declared bounded operations only through `senpai run`. Read the capsule
    declaration first when parameters, scope, or its advisory `access` matter.
    Treat run output as potentially scrubbed diagnostics; diagnose failures from

@@ -98,6 +98,15 @@ The set of roles is open (LLM-readable strings), not a closed enum. Each source 
 2. **Explicit priority next.** For a genuinely bare number, consider only sources that declare a numeric pattern and sort them by the optional integer `priority` (lower first). Missing priority sorts after every explicit value. JSON object insertion order is never routing data.
 3. **Ask when still ambiguous.** If the best candidates have the same priority, or more than one source plausibly owns the identifier after lookup, stop and ask the user rather than guess.
 
+`ticket_id_patterns` is optional setup information, not a field the user must
+know in advance. During an accepted manifest creation or update, an agent may
+record the narrowest reusable pattern supported by clear evidence (for example
+an observed bare Redmine issue number). During an ordinary ticket read it
+proposes, but does not silently persist, that learned pattern. If a bare id
+does not match a pattern but exactly one source has the `ticket_details` role,
+the agent may use that sole role candidate and report the missing pattern;
+zero or multiple candidates remain errors.
+
 For any role-driven action, candidates are the declared sources or instances with that role. One candidate routes directly; zero candidates is a clear "capability not declared" error; more than one is an ambiguity error unless the command explicitly names the source or instance. This rule also applies to code-hosting roles. A selected hosting instance must be present in the target repo's `hosting` map, otherwise the CLI reports that the capability is not available for that repo.
 
 ### 1.4 Multi-repo galaxies

@@ -38,10 +38,13 @@ safe mechanism. Never put a token in an argument, command transcript, or chat.
 
 ## Redmine commands
 
-Run `python3 <skill-dir>/scripts/redmine.py --help` for exact arguments. Supply
-the source URL, declared project identifier where the operation needs it, and
-the API-key environment-variable name. The script emits bounded JSON and does
-not print credentials. For example, a routed read is conceptually:
+Use the documented command below for a routed read. Run
+`python3 <skill-dir>/scripts/redmine.py --help` only when the requested
+operation or its arguments are not covered by this skill or its Redmine
+reference. Supply the source URL, declared project identifier where the
+operation needs it, and the API-key environment-variable name. The script
+emits bounded JSON and does not print credentials. For example, a routed read
+is conceptually:
 
 ```text
 python3 scripts/redmine.py get-issue --url <url> --api-key-env <name> --id <ticket-id>
