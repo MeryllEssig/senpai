@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aimanager.dev/schema/v1/aimanager.schema.json",
-  "title": "AI Manager manifest v1",
-  "description": "The committed .aimanager.jsonc manifest. JSONC comments must be removed by a JSONC parser before schema validation.",
+  "$id": "https://senpai.dev/schema/v1/senpai.schema.json",
+  "title": "Senpai manifest v1",
+  "description": "The committed .senpai.jsonc manifest. JSONC comments must be removed by a JSONC parser before schema validation.",
   "$ref": "#/$defs/manifest",
   "$defs": {
     "identifier": {
@@ -33,7 +33,7 @@
     "access": {
       "type": "string",
       "enum": ["read-only"],
-      "description": "Optional advisory hint for the LLM. AI Manager does not enforce it."
+      "description": "Optional advisory hint for the LLM. Senpai does not enforce it."
     },
     "auth": {
       "type": "object",
@@ -234,7 +234,7 @@
     "manifest": {
       "type": "object",
       "properties": {
-        "$schema": { "const": "https://aimanager.dev/schema/v1/aimanager.schema.json" },
+        "$schema": { "const": "https://senpai.dev/schema/v1/senpai.schema.json" },
         "version": { "const": 1 },
         "project": { "$ref": "#/$defs/project" },
         "trackers": {

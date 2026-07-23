@@ -1,9 +1,9 @@
 // =============================================================================
-// .aimanager/capsules.local.json - REFERENCE EXAMPLE (capsule values)
+// .senpai/capsules.local.json - REFERENCE EXAMPLE (capsule values)
 // =============================================================================
 // This file is the reference example for the LOCAL CAPSULE-VALUES file that
 // pairs with the manifest's "capsules" block (technical-considerations 1.10).
-// The real file is plain JSON named ".aimanager/capsules.local.json"; this
+// The real file is plain JSON named ".senpai/capsules.local.json"; this
 // documented copy is JSONC so it can explain itself. The values below match the
 // "db-preprod" capsule declared in the golden manifest
 // (doc/reference-manifest.jsonc).
@@ -15,15 +15,15 @@
 // What this file is:
 //   - NEVER committed. It is gitignored and holds real, machine-local values.
 //     It is the ONE place a real secret value may sit (technical-considerations
-//     1.7 and 5); it is read ONLY inside AI Manager's own process when it runs
+//     1.7 and 5); it is read ONLY inside Senpai's own process when it runs
 //     a capsule, and never reaches the agent, the transcript, or CLI output.
-//     It lives outside the personal overlay (.aimanager.local.jsonc) on
+//     It lives outside the personal overlay (.senpai.local.jsonc) on
 //     purpose: the overlay merges into the manifest and is agent-readable,
 //     while this file must never be read by the agent.
-//   - Scaffolded by "aimanager init": one stub per non-supplied {placeholder}
+//   - Scaffolded by "senpai init": one stub per non-supplied {placeholder}
 //     found in the manifest's capsule templates. Capsules with no local values create no
 //     entry here; when no capsule requires local values, this file is not created.
-//     The developer fills the stubs themselves, out of band; AI Manager never
+//     The developer fills the stubs themselves, out of band; Senpai never
 //     transfers a value.
 //
 // The committed / local boundary (technical-considerations 1.10):
@@ -40,7 +40,7 @@
 // Each value, independently:
 //   - a literal string  -> the real value lives here (this is what softens the
 //     "no secret values" non-goal: a literal secret may sit in this file only);
-//   - a "$ENV_VAR" ref   -> the value stays in the environment; AI Manager
+//   - a "$ENV_VAR" ref   -> the value stays in the environment; Senpai
 //     resolves it at run time. Validation checks the reference syntax but does
 //     not inspect whether the name currently resolves.
 //
@@ -56,7 +56,7 @@
 // agent: every resolved value below is replaced by its {name}.
 //
 // Run the capsule this file backs:
-//   aimanager run db-preprod --query "SELECT id FROM orders LIMIT 5"
+//   senpai run db-preprod --query "SELECT id FROM orders LIMIT 5"
 // The manifest template is:
 //   "mysql --host=db.preprod.acme.example --user=acme_ro --password={password} acme_shop --execute {query}"
 // Every run result displays this declared template, never its resolved form.
@@ -68,7 +68,7 @@
   // Keyed by capsule name, exactly as declared in the manifest's "capsules".
   "db-preprod": {
     // The secret. Shown here as a "$ENV" reference, which keeps the value in
-    // the environment; runtime resolution happens only inside "aimanager run".
+    // the environment; runtime resolution happens only inside "senpai run".
     //
     // This value could EQUALLY be a literal secret string, for example
     //   "password": "s3cr3t-preprod-ro"

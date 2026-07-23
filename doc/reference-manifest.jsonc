@@ -1,11 +1,11 @@
 // =============================================================================
-// .aimanager.jsonc - REFERENCE EXAMPLE ("golden" manifest)
+// .senpai.jsonc - REFERENCE EXAMPLE ("golden" manifest)
 // =============================================================================
-// This file is the reference example for the AI Manager manifest format. It
+// This file is the reference example for the Senpai manifest format. It
 // freezes the schema: every feature described in the spec documents appears
 // here at least once, with the exact field shapes the docs define.
 //
-//   - doc/goal.md                     what AI Manager is and is not
+//   - doc/goal.md                     what Senpai is and is not
 //   - doc/user-stories.md             who needs what and why
 //   - doc/technical-considerations.md field shapes (sections 1.1 to 1.10)
 //   - doc/notes.md                    cross-cutting process notes
@@ -15,15 +15,15 @@
 //
 // Ground rules the format guarantees:
 //   - Capsules are the one executable surface. They are bounded,
-//     non-interactive commands AI MANAGER runs without a shell. A capsule may
+//     non-interactive commands Senpai runs without a shell. A capsule may
 //     require no local values or may use private placeholders resolved inside
-//     AI Manager.
+//     Senpai.
 //     No executable strings appear anywhere else in the manifest.
 //   - No secret values in THIS file. Credentials are referenced by environment
 //     variable NAME only (for example "password_env"), never by value. The one
 //     place a real secret value may sit is the never-committed local values
-//     file ".aimanager/capsules.local.json" (gitignored), read only inside
-//     AI Manager's own process when it runs a capsule; its shape is shown in
+//     file ".senpai/capsules.local.json" (gitignored), read only inside
+//     Senpai's own process when it runs a capsule; its shape is shown in
 //     comments next to the "capsules" block below.
 //   - JSONC. Comments are encouraged: the file should explain itself to
 //     teammates and to AI agents alike.
@@ -37,21 +37,21 @@
 // never consulted, and manifests never merge or inherit from one another
 // (technical-considerations 1.2).
 //
-// Personal overlay: a gitignored .aimanager.local.jsonc placed beside this
+// Personal overlay: a gitignored .senpai.local.jsonc placed beside this
 // file is deep-merged over it for private paths, preferences, and personal
 // auth or capsule overrides (technical-considerations 1.9). A separate
-// gitignored .aimanager/capsules.local.json (note: no dash in the directory)
+// gitignored .senpai/capsules.local.json (note: no dash in the directory)
 // holds the per-capsule values (technical-considerations 1.10); it sits
 // outside the overlay because the overlay is agent-readable and this file
 // must never be. Flat siblings:
-//   .aimanager.jsonc            committed manifest (this file)
-//   .aimanager.local.jsonc      personal overlay (1.9)
-//   .aimanager/capsules.local.json  optional local capsule values, never committed
+//   .senpai.jsonc            committed manifest (this file)
+//   .senpai.local.jsonc      personal overlay (1.9)
+//   .senpai/capsules.local.json  optional local capsule values, never committed
 // =============================================================================
 {
   // Editor association for completion and diagnostics. This URI is stable for
   // every v1 manifest; the top-level `version` remains the compatibility key.
-  "$schema": "https://aimanager.dev/schema/v1/aimanager.schema.json",
+  "$schema": "https://senpai.dev/schema/v1/senpai.schema.json",
 
   // Manifest schema version, present from day one so the schema can evolve
   // without breaking existing manifests. Integer, starts at 1.
@@ -103,8 +103,8 @@
   // stop entirely and ask the user how to proceed (core behavior).
   //
   // Optional "skill" on a source (same on code_hosting instances) overrides
-  // the technical adapter selected by the common aimanager-project-management
-  // or aimanager-code-hosting interface. Project working instructions belong
+  // the technical adapter selected by the common senpai-project-management
+  // or senpai-code-hosting interface. Project working instructions belong
   // in "workflows", not in a source adapter.
   "trackers": {
   // Source types shown in the docs: "redmine", "jira", "linear". The set is
@@ -196,9 +196,9 @@
   // explicit user confirmation for the concrete operation. An omitted "read"
   // defaults to "allow"; every other omitted capability defaults to "deny".
   //
-  // If an entire domain is omitted, AI Manager loads its read-only default:
-  // aimanager-project-use-ticket-workflow or
-  // aimanager-project-use-code-hosting-workflow. A declared domain requires
+  // If an entire domain is omitted, Senpai loads its read-only default:
+  // senpai-project-use-ticket-workflow or
+  // senpai-project-use-code-hosting-workflow. A declared domain requires
   // both "skill" and "policy". Custom skill names are free.
   "workflows": {
     "tickets": {
@@ -299,9 +299,9 @@
   },
 
   // ---------------------------------------------------------------------------
-  // Capsules: every bounded project command AI Manager runs (1.10)
+  // Capsules: every bounded project command Senpai runs (1.10)
   // ---------------------------------------------------------------------------
-  // A capsule is a bounded, non-interactive command AI MANAGER executes itself.
+  // A capsule is a bounded, non-interactive command Senpai executes itself.
   // It may require no local values and contain no placeholders at all, as the
   // test and log examples below do. Private templates retain transcript
   // protection.
@@ -315,14 +315,14 @@
   // template is split into argv once, then each {placeholder} is substituted
   // inside its existing element. It can never create another argument, and no
   // shell re-interprets it: quotes or $(...) are data. Consequence: no pipes or
-  // redirections inside a template. Before returning, AI Manager scrubs both
+  // redirections inside a template. Before returning, Senpai scrubs both
   // stdout and stderr, replacing every resolved non-supplied value with its
   // {name}, so an error that re-echoes its arguments cannot leak a value.
   //
-  // Run it: aimanager run db-preprod --query "SELECT id FROM orders LIMIT 5"
+  // Run it: senpai run db-preprod --query "SELECT id FROM orders LIMIT 5"
   //
-  // Matching .aimanager/capsules.local.json (gitignored, NEVER committed;
-  // scaffolded by "aimanager init", one stub per non-supplied placeholder;
+  // Matching .senpai/capsules.local.json (gitignored, NEVER committed;
+  // scaffolded by "senpai init", one stub per non-supplied placeholder;
   // full golden example in doc/reference-capsule.jsonc):
   //   {
   //     "db-preprod": {
@@ -339,19 +339,19 @@
       "environment": "preprod",
       "repo": "api_billing",
       // Optional informational pointer to an analogous external MCP tool.
-      // AI Manager neither dispatches to it nor applies capsule guarantees to
-      // it; `aimanager run` always executes `command`.
+      // Senpai neither dispatches to it nor applies capsule guarantees to
+      // it; `senpai run` always executes `command`.
       "mcp": { "server": "mysql", "tool": "query" },
-      // Optional advisory hint for the LLM; AI Manager does not enforce it.
+      // Optional advisory hint for the LLM; Senpai does not enforce it.
       "access": "read-only",
-      "note": "One-shot SQL against preprod, read-only. AI Manager returns the declared template and scrubbed rows, so the password never enters the transcript.",
+      "note": "One-shot SQL against preprod, read-only. Senpai returns the declared template and scrubbed rows, so the password never enters the transcript.",
       // Shared coordinates stay committed for zero-guess onboarding. {query}
       // is supplied by the AGENT; only {password} comes from local values.
       // Inline substitution stays inside this one pre-parsed argv element.
       "command": "mysql --host=db.preprod.acme.example --user=acme_ro --password={password} acme_shop --execute {query}",
       // Placeholders filled by the agent at call time (everything else is local).
       "supplied": ["query"],
-      // Safety limits applied by AI Manager. Output is buffered and scrubbed;
+      // Safety limits applied by Senpai. Output is buffered and scrubbed;
       // a larger result must be narrowed by the caller rather than streamed.
       "timeout_seconds": 30,
       "max_output_bytes": 1048576
@@ -403,7 +403,7 @@
   // ---------------------------------------------------------------------------
   // A declarative routing table from intents to approaches. "if" is a
   // plain-language condition the agent recognizes in the user's request;
-  // "then" is the instruction to follow. AI Manager does not interpret rules;
+  // "then" is the instruction to follow. Senpai does not interpret rules;
   // the agent maps them to a declared capsule or external tool skill. Routine
   // ticket and code-hosting policy and procedure live in "workflows"; rules
   // remain for cross-cutting or exceptional guardrails.

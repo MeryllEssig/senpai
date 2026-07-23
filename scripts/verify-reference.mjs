@@ -95,7 +95,7 @@ function templatePlaceholders(command, id) {
 
 function assertReference(manifest) {
   assert(manifest.version === 1, "reference manifest must be version 1");
-  assert(manifest.$schema === "https://aimanager.dev/schema/v1/aimanager.schema.json", "reference manifest must declare the v1 schema URI");
+  assert(manifest.$schema === "https://senpai.dev/schema/v1/senpai.schema.json", "reference manifest must declare the v1 schema URI");
 
   const repoIds = new Set(Object.keys(manifest.repos ?? {}));
   const environmentIds = new Set(Object.keys(manifest.environments ?? {}));
@@ -164,7 +164,7 @@ function assertCapsuleValues(manifest, values) {
   for (const id of Object.keys(values)) assert(expectedCapsules.has(id), `local values name unknown capsule or capsule requiring no local values: ${id}`);
 }
 
-const schema = JSON.parse(readFileSync(resolve(root, "schema/aimanager.schema.json"), "utf8"));
+const schema = JSON.parse(readFileSync(resolve(root, "schema/senpai.schema.json"), "utf8"));
 const manifest = parseJsonc(resolve(root, "doc/reference-manifest.jsonc"));
 const capsuleValues = parseJsonc(resolve(root, "doc/reference-capsule.jsonc"));
 const ajv = new Ajv2020({

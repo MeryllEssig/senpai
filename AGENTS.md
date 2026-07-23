@@ -1,8 +1,8 @@
-# AI Manager
+# Senpai
 
-AI Manager is a **project-scoped, declarative context layer for AI coding agents**.
+Senpai is a **project-scoped, declarative context layer for AI coding agents**.
 
-Each project carries a single manifest file, `.aimanager.jsonc`, that declares the context an AI agent needs to interact with the project's ecosystem: ticket trackers, code hosting, repositories, logical environments, documentation locations, bounded project-operation capsules, and rules mapping intents to capsules or external-tool skills.
+Each project carries a single manifest file, `.senpai.jsonc`, that declares the context an AI agent needs to interact with the project's ecosystem: ticket trackers, code hosting, repositories, logical environments, documentation locations, bounded project-operation capsules, and rules mapping intents to capsules or external-tool skills.
 
 ## Documentation
 
@@ -10,7 +10,7 @@ Each project carries a single manifest file, `.aimanager.jsonc`, that declares t
 * [User Stories](./doc/user-stories.md)
 * [Technical considerations](./doc/technical-considerations.md)
 * [CLI contract](./doc/cli-contract.md)
-* [Manifest JSON Schema](./schema/aimanager.schema.json)
+* [Manifest JSON Schema](./schema/senpai.schema.json)
 * [Example manifest](./doc/reference-manifest.jsonc)
 * [Example capsule values](./doc/reference-capsule.jsonc)
 * [Notes](./doc/notes.md)

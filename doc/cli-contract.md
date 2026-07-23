@@ -1,13 +1,13 @@
-# AI Manager CLI Contract — v1 foundation
+# Senpai CLI Contract — v1 foundation
 
 This document fixes the public contract needed for the first vertical slice.
-It does not turn AI Manager into an orchestration engine: `get` commands only
+It does not turn Senpai into an orchestration engine: `get` commands only
 read the manifest and never contact a tracker or hosting service.
 Only `run` executes a process, and it executes capsules only.
 
 ## Common behavior
 
-- The executable name is `aimanager`.
+- The executable name is `senpai`.
 - A command that reads a manifest accepts `--manifest <absolute-path>`. With
   this option, it must use exactly that file and must not walk the directory
   tree. Without it, it resolves from its current directory by walking upward.
@@ -46,8 +46,8 @@ Only `run` executes a process, and it executes capsules only.
 ## Resolution and inventory
 
 ```text
-aimanager resolve [--from <directory>] [--json]
-aimanager summary [--manifest <absolute-path>] [--json]
+senpai resolve [--from <directory>] [--json]
+senpai summary [--manifest <absolute-path>] [--json]
 ```
 
 `resolve` returns the canonical absolute `manifest_path`, the directory that
@@ -62,21 +62,21 @@ The usage skill calls `resolve` once from the launch directory, retains
 ## Scoped reads
 
 ```text
-aimanager get tracker --role <role> [--source <source-id>] [--manifest <path>] [--json]
-aimanager get ticket-route --id <ticket-id> [--source <source-id>] [--manifest <path>] [--json]
-aimanager get hosting --role <role> --repo <repo-id> [--instance <instance-id>] [--manifest <path>] [--json]
-aimanager get workflow --domain <tickets|code_changes> [--manifest <path>] [--json]
-aimanager get repo (--id <repo-id> | --path <path> | --current) [--with-dependencies] [--manifest <path>] [--json]
-aimanager list repos [--manifest <path>] [--json]
-aimanager get environment --id <environment-id> [--manifest <path>] [--json]
-aimanager get capsule --id <capsule-id> [--manifest <path>] [--json]
-aimanager list capsules [--repo <repo-id>] [--env <environment-id>] [--type <type>] [--manifest <path>] [--json]
-aimanager get docs [--id <docs-id>] [--manifest <path>] [--json]
-aimanager get rules [--manifest <path>] [--json]
+senpai get tracker --role <role> [--source <source-id>] [--manifest <path>] [--json]
+senpai get ticket-route --id <ticket-id> [--source <source-id>] [--manifest <path>] [--json]
+senpai get hosting --role <role> --repo <repo-id> [--instance <instance-id>] [--manifest <path>] [--json]
+senpai get workflow --domain <tickets|code_changes> [--manifest <path>] [--json]
+senpai get repo (--id <repo-id> | --path <path> | --current) [--with-dependencies] [--manifest <path>] [--json]
+senpai list repos [--manifest <path>] [--json]
+senpai get environment --id <environment-id> [--manifest <path>] [--json]
+senpai get capsule --id <capsule-id> [--manifest <path>] [--json]
+senpai list capsules [--repo <repo-id>] [--env <environment-id>] [--type <type>] [--manifest <path>] [--json]
+senpai get docs [--id <docs-id>] [--manifest <path>] [--json]
+senpai get rules [--manifest <path>] [--json]
 ```
 
 `get ticket-route` returns a source selection, not ticket content. The usage
-skill passes that selection to `aimanager-project-management`, which uses the
+skill passes that selection to `senpai-project-management`, which uses the
 source's default or custom adapter. An ambiguous route exits 5 and lists
 candidate ids only.
 
@@ -89,8 +89,8 @@ map.
 `get workflow` returns the requested `domain`, its effective `skill`, and its
 fully expanded `policy`. A declared domain always supplies its skill; otherwise
 the skill is
-`aimanager-project-use-ticket-workflow` for `tickets` or
-`aimanager-project-use-code-hosting-workflow` for `code_changes`. The expanded
+`senpai-project-use-ticket-workflow` for `tickets` or
+`senpai-project-use-code-hosting-workflow` for `code_changes`. The expanded
 policy contains every capability defined for that domain: an omitted `read`
 is `allow`, and every other omitted capability is `deny`. This command reads
 configuration only; it does not load or inspect the named skill.
@@ -107,7 +107,7 @@ candidate ids.
 `get capsule` returns the declaration, including its literal command template
 and optional MCP hint, but never local values or a resolved command. The MCP
 hint is informational metadata for an external tool skill; it is not an
-alternate `aimanager run` backend and inherits none of the capsule runner's
+alternate `senpai run` backend and inherits none of the capsule runner's
 timeout, output-limit, or scrubbing guarantees.
 `list capsules` returns compact
 metadata only: id, label, type, repo, environment, MCP server/tool, and access.
@@ -122,10 +122,10 @@ environment-variable value.
 ## Local setup and diagnostics
 
 ```text
-aimanager init [--manifest <path>] [--json]
-aimanager validate manifest [--manifest <path>] [--json]
-aimanager validate local [--manifest <path>] [--json]
-aimanager doctor [--manifest <path>] [--json]
+senpai init [--manifest <path>] [--json]
+senpai validate manifest [--manifest <path>] [--json]
+senpai validate local [--manifest <path>] [--json]
+senpai doctor [--manifest <path>] [--json]
 ```
 
 `init` is idempotent: when at least one capsule has a non-supplied placeholder,
@@ -144,7 +144,7 @@ service.
 ## Capsule execution
 
 ```text
-aimanager run <capsule-id> [--<supplied-name> <value> …] [--manifest <path>] [--json]
+senpai run <capsule-id> [--<supplied-name> <value> …] [--manifest <path>] [--json]
 ```
 
 `run` accepts only ids from the `capsules` section. A capsule with no supplied

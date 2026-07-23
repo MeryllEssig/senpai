@@ -1,10 +1,10 @@
-# AI Manager - Open Questions and Notes
+# Senpai - Open Questions and Notes
 
 This file tracks design topics that are still open, plus decisions with no natural home in the other documents.
 
 Policy: when a question is resolved and its decision lands in another documentation file (goal, user stories, technical considerations, reference manifest), the note is **removed** from this list rather than kept as a RESOLVED entry. The decision then lives where it is enforced. Entries that remain here are either genuinely unresolved or project-level decisions the product docs do not cover.
 
-The 2026-07-10 to 2026-07-20 design passes resolved manifest naming, resolution, tracker and hosting routing, overlays, skills, capsule security, confirmations, diagnostics, and distribution. A real-project review on 2026-07-22 then collapsed project execution into one abstraction before implementation: every bounded non-interactive project command AI Manager runs is a capsule, including commands requiring no local values, with structured `cwd` and repo/environment metadata. All current product decisions live in [technical-considerations.md](technical-considerations.md), [user-stories.md](user-stories.md), and [reference-manifest.jsonc](reference-manifest.jsonc). Only project-process notes remain below.
+The 2026-07-10 to 2026-07-20 design passes resolved manifest naming, resolution, tracker and hosting routing, overlays, skills, capsule security, confirmations, diagnostics, and distribution. A real-project review on 2026-07-22 then collapsed project execution into one abstraction before implementation: every bounded non-interactive project command Senpai runs is a capsule, including commands requiring no local values, with structured `cwd` and repo/environment metadata. All current product decisions live in [technical-considerations.md](technical-considerations.md), [user-stories.md](user-stories.md), and [reference-manifest.jsonc](reference-manifest.jsonc). Only project-process notes remain below.
 
 ## Project process
 
