@@ -36,6 +36,12 @@ the selected adapter without exposing a secret. For `interactive`, Redmine's
 script has no login flow: stop and ask the user to arrange an API key through a
 safe mechanism. Never put a token in an argument, command transcript, or chat.
 
+Every Redmine adapter command makes an outbound HTTPS request to the selected
+source URL. If the execution environment restricts outbound network access,
+request its approval before the command; ticket `read: allow` does not grant
+that separate environment permission. Treat empty or malformed adapter output
+as an incomplete result, not as a successful ticket operation.
+
 ## Redmine commands
 
 Use the documented command below for a routed read. Run

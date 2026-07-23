@@ -30,6 +30,12 @@ With `interactive`, start the documented login flow only when the user has
 asked you to proceed, then hand it over. If auth cannot work without reading a
 secret, stop and ask the user how to proceed.
 
+`gh` and `glab` commands that inspect or mutate the selected host make outbound
+network requests. If the execution environment restricts outbound network
+access, request its approval before the command with the selected host and
+concrete operation; the SenpAI workflow policy is separate. Do not claim a
+remote result from empty or incomplete CLI output.
+
 For a galaxy, query repositories with dependencies before preparing coordinated
 changes. Create one merge request per modified repo on its role-correct
 instance; do not collapse multiple repos into one MR. Deployment and test

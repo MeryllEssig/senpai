@@ -46,6 +46,15 @@ without the agent receiving a secret value, stop and ask the user how to
 proceed. Remind users that a variable newly defined in a shell requires an
 agent restart to be inherited.
 
+## Network-aware execution
+
+A platform adapter or CLI that contacts a declared tracker or hosting URL makes
+an outbound network request. Its workflow permission and the execution
+environment's network permission are separate: when the environment requires
+network approval, request it before the call with the concrete operation and
+target, rather than first probing a restricted sandbox. Do not report a remote
+result unless the adapter or CLI returned a complete, usable response.
+
 ## Scoped command map
 
 - Ticket source: `senpai get ticket-route --id <id>`; role-driven tracker:
