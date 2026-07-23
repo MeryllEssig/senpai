@@ -3,7 +3,7 @@ set -euo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 work=$(mktemp -d)
-trap 'rm -rf -- "$work"' EXIT
+trap 'result_code=$?; rm -rf -- "$work"; exit "$result_code"' EXIT
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 assert_file() { [[ -f $1 ]] || fail "expected file: $1"; }
@@ -16,9 +16,48 @@ chmod +x "$work/source/senpai"
 printf 'first version\n' > "$work/source/skills/senpai-usage/SKILL.md"
 printf 'script\n' > "$work/source/skills/senpai-project-management/scripts/example.py"
 
+# A release archive contains the executable and every shipped skill. The fake
+# curl server lets this test exercise the same verified-download path without
+# requiring the private GitHub repository to be publicly reachable.
+release="$work/release"
+mkdir -p "$release" "$work/bin"
+for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
+  tar -czf "$release/senpai-$target.tar.gz" -C "$work/source" senpai skills
+  checksum=$(shasum -a 256 "$release/senpai-$target.tar.gz" | awk '{print $1}')
+  printf '%s  senpai-%s.tar.gz\n' "$checksum" "$target" >> "$release/checksums.txt"
+done
+cat > "$work/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+url=""
+output=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) output=$2; shift 2 ;;
+    *) url=$1; shift ;;
+  esac
+done
+[[ -n $url && -n $output ]] || exit 64
+file=${url##*/}
+if [[ ${MOCK_TAMPER:-false} == true && $file == *.tar.gz ]]; then
+  printf 'tampered' > "$output"
+else
+  cp -- "$MOCK_RELEASE_DIR/$file" "$output"
+fi
+EOF
+chmod +x "$work/bin/curl"
+
 home="$work/home"
 prefix="$work/prefix"
 state="$work/state"
+PATH="$work/bin:$PATH" MOCK_RELEASE_DIR="$release" HOME="$home" "$root/installer.sh" --yes --agents codex --version v0.1.0 --repository example/senpai --prefix "$prefix" --state-dir "$state"
+assert_file "$prefix/bin/senpai"
+assert_file "$home/.codex/skills/senpai-usage/SKILL.md"
+
+if PATH="$work/bin:$PATH" MOCK_RELEASE_DIR="$release" MOCK_TAMPER=true HOME="$work/tampered-home" "$root/installer.sh" --yes --agents none --version v0.1.0 --repository example/senpai --prefix "$work/tampered-prefix" --state-dir "$work/tampered-state" >/dev/null 2>&1; then
+  fail "tampered release unexpectedly installed"
+fi
+
 HOME="$home" "$root/installer.sh" --yes --binary "$work/source/senpai" --skills-dir "$work/source/skills" --agents codex,opencode --prefix "$prefix" --state-dir "$state"
 
 assert_file "$prefix/bin/senpai"
@@ -26,6 +65,10 @@ assert_file "$home/.codex/skills/senpai-usage/SKILL.md"
 assert_file "$home/.config/opencode/skills/senpai-project-management/scripts/example.py"
 assert_contains "$state/ownership.tsv" $'binary\t'"$prefix/bin/senpai"
 assert_contains "$state/ownership.tsv" $'skill\t'"$home/.codex/skills/senpai-usage"
+
+# macOS ships Bash 3.2: an empty selected-agent array must stay safe under
+# `set -u` when the binary is installed without skills.
+HOME="$home" "$root/installer.sh" --yes --binary "$work/source/senpai" --skills-dir "$work/source/skills" --agents none --prefix "$prefix" --state-dir "$state"
 
 # A rerun deliberately replaces shipped skill contents and refreshes ownership.
 printf 'replacement\n' > "$work/source/skills/senpai-usage/SKILL.md"

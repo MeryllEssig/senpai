@@ -181,10 +181,21 @@ Ticket and code-change workflows combine explicit `allow`, `confirm`, and
 `deny` policies with project-specific instructions. When no workflow is
 declared, reads are allowed and writes are denied.
 
-## Install locally
+## Install
 
-Release downloads are not available yet. Build a release binary and install it
-with the shipped skills for the agent ecosystems you use:
+Once a GitHub release is published, install the latest checksum-checked release
+for macOS or Linux on arm64 or x86_64 with (replace the agent list as needed):
+
+```sh
+curl --fail --location --silent --show-error \
+  https://raw.githubusercontent.com/MeryllEssig/senpai/main/installer.sh | bash -s -- --agents codex
+```
+
+The installer downloads the matching archive and verifies its SHA-256 from the
+same release before installing the binary and selected skills. This detects a
+corrupted download; repository access controls protect the release assets.
+Before the first public release, or while developing locally, build and install
+from the checkout:
 
 ```sh
 cargo build --release
@@ -203,7 +214,7 @@ binary and `senpai-*` skill directories it owns, allowing a safe removal:
 ```
 
 Read [local installation](doc/installation.md) for destination paths, custom
-prefixes, ownership tracking, and uninstall behavior.
+prefixes, release selection, ownership tracking, and uninstall behavior.
 
 ## Development
 

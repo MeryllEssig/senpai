@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Install a locally built SenpAI binary and its shipped skills.
-#
-# Release download/checksum verification intentionally lives outside this local
-# installer.  Supply an already-built binary with --binary.
+# Install a verified SenpAI release or a locally built binary and its skills.
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -11,14 +8,17 @@ STATE_VERSION=1
 
 usage() {
   cat <<'EOF'
-Usage: installer.sh --binary PATH [options]
+Usage: installer.sh [--binary PATH | --version TAG] [options]
        installer.sh --uninstall [options]
 
-Install a local SenpAI build and optionally copy its shipped skills.
+Install a checksum-checked SenpAI release (latest by default) or a local build,
+then optionally copy its shipped skills.
 
 Options:
-  --binary PATH       Executable local SenpAI binary (required for install)
-  --skills-dir PATH   Directory containing senpai-* skill directories (default: ./skills)
+  --binary PATH       Executable local SenpAI binary
+  --skills-dir PATH   Local senpai-* skills directory (default: ./skills with --binary)
+  --version TAG       GitHub release tag (default: latest)
+  --repository SLUG   GitHub repository for releases (default: MeryllEssig/senpai)
   --agents LIST       Comma-separated: codex,claude,gemini,opencode,all,none
   --prefix PATH       Binary prefix (default: $SENPAI_INSTALL_PREFIX or ~/.local)
   --state-dir PATH    Installer ownership state (default: $XDG_STATE_HOME/senpai
@@ -47,17 +47,23 @@ absolute_path() {
 }
 
 binary=""
-skills_dir="$(pwd -P)/skills"
+skills_dir=""
+version="latest"
+version_set=false
+repository="${SENPAI_RELEASE_REPOSITORY:-MeryllEssig/senpai}"
 agents=""
 prefix="${SENPAI_INSTALL_PREFIX:-$HOME/.local}"
 state_dir="${SENPAI_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/senpai}"
 assume_yes=false
 uninstall=false
+download_dir=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --binary) require_value "$@"; binary=$2; shift 2 ;;
     --skills-dir) require_value "$@"; skills_dir=$2; shift 2 ;;
+    --version) require_value "$@"; version=$2; version_set=true; shift 2 ;;
+    --repository) require_value "$@"; repository=$2; shift 2 ;;
     --agents) require_value "$@"; agents=$2; shift 2 ;;
     --prefix) require_value "$@"; prefix=$2; shift 2 ;;
     --state-dir) require_value "$@"; state_dir=$2; shift 2 ;;
@@ -107,17 +113,84 @@ uninstall_owned() {
 }
 
 if $uninstall; then
-  [[ -z $binary && -z $agents ]] || fail "--uninstall cannot be combined with --binary or --agents"
+  [[ -z $binary && -z $skills_dir && $version_set == false && -z $agents ]] || fail "--uninstall cannot be combined with installation options"
   uninstall_owned
   exit 0
 fi
 
-[[ -n $binary ]] || fail "--binary is required for installation"
-[[ -f $binary ]] || fail "binary is not a regular file: $binary"
-[[ -x $binary ]] || fail "binary is not executable: $binary"
-binary=$(absolute_path "$binary")
-[[ -d $skills_dir ]] || fail "skills directory does not exist: $skills_dir"
-skills_dir=$(absolute_path "$skills_dir")
+release_target() {
+  local os architecture
+  os=$(uname -s)
+  architecture=$(uname -m)
+  case "$os/$architecture" in
+    Darwin/arm64) printf '%s\n' 'aarch64-apple-darwin' ;;
+    Darwin/x86_64) printf '%s\n' 'x86_64-apple-darwin' ;;
+    Linux/arm64|Linux/aarch64) printf '%s\n' 'aarch64-unknown-linux-musl' ;;
+    Linux/x86_64) printf '%s\n' 'x86_64-unknown-linux-musl' ;;
+    *) fail "unsupported platform: $os/$architecture (supported: macOS and Linux on arm64 or x86_64)" ;;
+  esac
+}
+
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    fail "SHA-256 tool not found (need shasum or sha256sum)"
+  fi
+}
+
+download_release() {
+  [[ $repository =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || fail "invalid GitHub repository: $repository"
+  [[ $version != */* ]] || fail "invalid release tag: $version"
+  command -v curl >/dev/null 2>&1 || fail "curl is required to download a release"
+  command -v tar >/dev/null 2>&1 || fail "tar is required to unpack a release"
+
+  local target artifact base_url archive checksums expected actual
+  target=$(release_target)
+  artifact="$PROGRAM_NAME-$target.tar.gz"
+  if [[ $version == latest ]]; then
+    base_url="https://github.com/$repository/releases/latest/download"
+  else
+    base_url="https://github.com/$repository/releases/download/$version"
+  fi
+  download_dir=$(mktemp -d "${TMPDIR:-/tmp}/senpai.XXXXXX") || fail "cannot create temporary directory"
+  trap '[[ -z $download_dir ]] || rm -rf -- "$download_dir"' EXIT
+  archive="$download_dir/$artifact"
+  checksums="$download_dir/checksums.txt"
+  curl --fail --location --silent --show-error "$base_url/checksums.txt" -o "$checksums" || fail "cannot download release checksums"
+  expected=$(awk -v artifact="$artifact" '$2 == artifact { print $1; exit }' "$checksums")
+  [[ $expected =~ ^[[:xdigit:]]{64}$ ]] || fail "checksum missing or invalid for $artifact"
+  curl --fail --location --silent --show-error "$base_url/$artifact" -o "$archive" || fail "cannot download $artifact"
+  actual=$(sha256_file "$archive")
+  actual=$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')
+  expected=$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')
+  [[ $actual == "$expected" ]] || fail "checksum verification failed for $artifact"
+  tar -tzf "$archive" | awk '
+    $0 == "senpai" { binary = 1 }
+    $0 ~ /^skills\/senpai-[^\/]+\/SKILL\.md$/ { skill = 1 }
+    $0 ~ /(^\/|\/\.\.?(\/|$))/ { invalid = 1 }
+    END { exit !(binary && skill && !invalid) }
+  ' || fail "release archive has an invalid layout"
+  tar -xzf "$archive" -C "$download_dir" || fail "cannot unpack $artifact"
+  [[ -x $download_dir/$PROGRAM_NAME ]] || fail "release archive does not contain an executable senpai binary"
+  binary="$download_dir/$PROGRAM_NAME"
+  skills_dir="$download_dir/skills"
+}
+
+if [[ -n $binary ]]; then
+  [[ $version_set == false ]] || fail "--binary cannot be combined with --version"
+  [[ -n $skills_dir ]] || skills_dir="$(pwd -P)/skills"
+  [[ -f $binary ]] || fail "binary is not a regular file: $binary"
+  [[ -x $binary ]] || fail "binary is not executable: $binary"
+  binary=$(absolute_path "$binary")
+  [[ -d $skills_dir ]] || fail "skills directory does not exist: $skills_dir"
+  skills_dir=$(absolute_path "$skills_dir")
+else
+  [[ -z $skills_dir ]] || fail "--skills-dir requires --binary"
+  download_release
+fi
 
 declare -a selected=()
 agent_dir() {
@@ -141,7 +214,9 @@ select_agents() {
       none) [[ ${#items[@]} -eq 1 ]] || fail "none cannot be combined with other agents"; return ;;
       codex|claude|gemini|opencode)
         local existing
-        for existing in "${selected[@]}"; do [[ $existing == "$item" ]] && continue 2; done
+        if [[ ${#selected[@]} -gt 0 ]]; then
+          for existing in "${selected[@]}"; do [[ $existing == "$item" ]] && continue 2; done
+        fi
         selected+=("$item")
         ;;
       *) fail "unknown agent: $item" ;;
@@ -188,29 +263,35 @@ temporary_state="$state_dir/.ownership.tsv.tmp.$$"
   write_record() {
     local kind=$1 path=$2 key record
     key="$kind"$'\t'"$path"
-    for record in "${written[@]}"; do [[ $record == "$key" ]] && return; done
+    if [[ ${#written[@]} -gt 0 ]]; then
+      for record in "${written[@]}"; do [[ $record == "$key" ]] && return; done
+    fi
     written+=("$key")
     printf '%s\t%s\n' "$kind" "$path"
   }
-  for record in "${prior_records[@]}"; do
-    IFS=$'\t' read -r kind path <<< "$record"
-    write_record "$kind" "$path"
-  done
-  write_record binary "$destination_binary"
-  for agent in "${selected[@]}"; do
-    destination_dir=$(agent_dir "$agent")
-    mkdir -p -- "$destination_dir"
-    destination_dir=$(absolute_path "$destination_dir")
-    for source in "${skill_sources[@]}"; do
-      skill_name=$(basename -- "$source")
-      temporary_skill="$destination_dir/.${skill_name}.tmp.$$"
-      rm -rf -- "$temporary_skill"
-      cp -R -- "$source" "$temporary_skill"
-      rm -rf -- "$destination_dir/$skill_name"
-      mv -- "$temporary_skill" "$destination_dir/$skill_name"
-      write_record skill "$destination_dir/$skill_name"
+  if [[ ${#prior_records[@]} -gt 0 ]]; then
+    for record in "${prior_records[@]}"; do
+      IFS=$'\t' read -r kind path <<< "$record"
+      write_record "$kind" "$path"
     done
-  done
+  fi
+  write_record binary "$destination_binary"
+  if [[ ${#selected[@]} -gt 0 ]]; then
+    for agent in "${selected[@]}"; do
+      destination_dir=$(agent_dir "$agent")
+      mkdir -p -- "$destination_dir"
+      destination_dir=$(absolute_path "$destination_dir")
+      for source in "${skill_sources[@]}"; do
+        skill_name=$(basename -- "$source")
+        temporary_skill="$destination_dir/.${skill_name}.tmp.$$"
+        rm -rf -- "$temporary_skill"
+        cp -R -- "$source" "$temporary_skill"
+        rm -rf -- "$destination_dir/$skill_name"
+        mv -- "$temporary_skill" "$destination_dir/$skill_name"
+        write_record skill "$destination_dir/$skill_name"
+      done
+    done
+  fi
 } > "$temporary_state"
 mv -f -- "$temporary_state" "$state_file"
 

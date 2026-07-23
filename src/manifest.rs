@@ -487,8 +487,8 @@ pub fn normalize_under(dir: &Path, input: &str) -> Result<String, SenpaiError> {
     } else {
         std::env::current_dir().unwrap().join(input)
     };
-    let normalized = normalize(&candidate);
-    let base = normalize(dir);
+    let normalized = canonicalize_existing_prefix(&normalize(&candidate))?;
+    let base = canonicalize_existing_prefix(&normalize(dir))?;
     if !normalized.starts_with(&base) {
         return Err(SenpaiError::new(
             4,
@@ -503,6 +503,26 @@ pub fn normalize_under(dir: &Path, input: &str) -> Result<String, SenpaiError> {
         .trim_start_matches('/')
         .to_string()
         .if_empty("."))
+}
+
+fn canonicalize_existing_prefix(path: &Path) -> Result<PathBuf, SenpaiError> {
+    let mut existing = path;
+    let mut suffix = Vec::new();
+    while !existing.exists() {
+        let component = existing.file_name().ok_or_else(|| {
+            SenpaiError::new(4, "invalid_manifest", "Cannot normalize filesystem path.")
+        })?;
+        suffix.push(component.to_os_string());
+        existing = existing.parent().ok_or_else(|| {
+            SenpaiError::new(4, "invalid_manifest", "Cannot normalize filesystem path.")
+        })?;
+    }
+    let mut canonical = fs::canonicalize(existing)
+        .map_err(|error| SenpaiError::new(4, "invalid_manifest", error.to_string()))?;
+    for component in suffix.iter().rev() {
+        canonical.push(component);
+    }
+    Ok(canonical)
 }
 trait IfEmpty {
     fn if_empty(self, other: &str) -> String;
@@ -524,4 +544,86 @@ pub fn normalize(p: &Path) -> PathBuf {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn manifest(capsule_command: &str) -> Value {
+        json!({
+            "version": 1,
+            "project": {"name": "demo", "label": "Demo", "context": "Test", "stack": []},
+            "repos": {"app": {"path": "."}},
+            "environments": {"local": {"label": "Local", "repo": "app"}},
+            "capsules": {
+                "test": {"label": "Test", "type": "test", "command": capsule_command, "repo": "app", "environment": "local"}
+            }
+        })
+    }
+
+    #[test]
+    fn jsonc_removes_comments_without_corrupting_urls_or_strings() {
+        let parsed: Value = serde_json::from_str(
+            &strip_jsonc(
+                r#"{/* metadata */ "url": "https://example.test//path", // comment
+                "text": "/* literal */"}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(parsed["url"], "https://example.test//path");
+        assert_eq!(parsed["text"], "/* literal */");
+        assert!(strip_jsonc("{/* unfinished").is_err());
+    }
+
+    #[test]
+    fn overlay_merging_recurses_and_null_removes_a_shared_value() {
+        let mut base = json!({"project": {"label": "Shared", "stack": ["Rust"]}, "docs": {"guide": {"url": "https://example.test"}}});
+        deep_merge(
+            &mut base,
+            json!({"project": {"label": "Personal"}, "docs": {"guide": null}}),
+        );
+        assert_eq!(base["project"]["label"], "Personal");
+        assert_eq!(base["project"]["stack"], json!(["Rust"]));
+        assert!(base["docs"].get("guide").is_none());
+    }
+
+    #[test]
+    fn validation_rejects_shell_operators_in_capsules() {
+        let error = validate(&manifest("printf hello | tee output")).unwrap_err();
+        assert_eq!(error.code, 4);
+        assert!(error.message.contains("shell operators"));
+    }
+
+    #[test]
+    fn capsule_locals_excludes_agent_supplied_values() {
+        let value = manifest("printf '%s:%s' {token} {message}");
+        let mut value = value;
+        value["capsules"]["test"]["supplied"] = json!(["message"]);
+        assert_eq!(
+            capsule_locals(&value).unwrap()["test"],
+            BTreeSet::from(["token".to_owned()])
+        );
+    }
+
+    #[test]
+    fn path_lookup_accepts_a_symlinked_manifest_path_but_rejects_outside_paths() {
+        use std::os::unix::fs::symlink;
+
+        let workspace = tempfile::tempdir().unwrap();
+        let real = workspace.path().join("real");
+        let link = workspace.path().join("link");
+        fs::create_dir(&real).unwrap();
+        symlink(&real, &link).unwrap();
+
+        assert_eq!(
+            normalize_under(&real, &link.join("nested/missing").to_string_lossy()).unwrap(),
+            "nested/missing"
+        );
+        assert!(
+            normalize_under(&real, &workspace.path().join("elsewhere").to_string_lossy()).is_err()
+        );
+    }
 }
