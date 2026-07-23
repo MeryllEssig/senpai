@@ -1,4 +1,6 @@
 <p align="center">
+  <img src="assets/senpai-logo.png" alt="Senpai logo" width="160">
+  <br>
   <a href="https://github.com/MeryllEssig/senpai"><strong>Senpai</strong></a>
 </p>
 
