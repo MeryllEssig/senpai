@@ -77,6 +77,7 @@ cat > "$migration_source" <<'EOF'
 EOF
 migration_result=$("$binary" migrate v1 --manifest "$migration_source" --json)
 printf '%s' "$migration_result" | grep -q '"written":false'
+printf '%s' "$migration_result" | grep -q '"\$schema":"https://raw.githubusercontent.com/MeryllEssig/senpai/main/schema/senpai.schema.json"'
 printf '%s' "$migration_result" | grep -q 'legacy-ticket-flow'
 printf '%s' "$migration_result" | grep -q 'legacy-ticket-adapter'
 [[ $(printf '%s' "$migration_result" | grep -o '"code":"review_rule"' | wc -l) -eq 2 ]]

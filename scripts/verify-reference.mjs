@@ -85,7 +85,7 @@ function templatePlaceholders(capsule, id) {
 
 function assertReference(manifest) {
   assert(manifest.version === 2, "reference manifest must be version 2");
-  assert(manifest.$schema === "https://senpai.dev/schema/v2/senpai.schema.json", "reference manifest must declare the v2 schema URI");
+  assert(manifest.$schema === "https://raw.githubusercontent.com/MeryllEssig/senpai/main/schema/senpai.schema.json", "reference manifest must declare the raw GitHub schema URI");
 
   const repoIds = new Set(Object.keys(manifest.repos ?? {}));
   const environmentIds = new Set(Object.keys(manifest.environments ?? {}));

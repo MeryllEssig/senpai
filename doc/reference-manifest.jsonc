@@ -1,7 +1,7 @@
 // SenpAI manifest v2 reference. It contains no secret values: auth names are
 // read by the selected adapter itself.
 {
-  "$schema": "https://senpai.dev/schema/v2/senpai.schema.json",
+  "$schema": "https://raw.githubusercontent.com/MeryllEssig/senpai/main/schema/senpai.schema.json",
   "version": 2,
   "project": {
     "name": "acme-shop",

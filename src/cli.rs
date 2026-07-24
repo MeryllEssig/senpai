@@ -491,7 +491,10 @@ fn migrate_v1(args: &[String]) -> Result<Value, SenpaiError> {
     draft.insert("version".into(), Value::from(2));
     draft.insert(
         "$schema".into(),
-        Value::String("https://senpai.dev/schema/v2/senpai.schema.json".into()),
+        Value::String(
+            "https://raw.githubusercontent.com/MeryllEssig/senpai/main/schema/senpai.schema.json"
+                .into(),
+        ),
     );
     draft.remove("trackers");
     draft.remove("code_hosting");
