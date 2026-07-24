@@ -5,3 +5,5 @@ target/
 .senpai.local.jsonc
 
 .senpai/capsules.local.json
+
+.scratch/
