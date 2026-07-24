@@ -71,7 +71,8 @@ cargo build --release
       "type": "test",
       "repo": "app",
       "environment": "local",
-      "command": "cargo test"
+      "program": "cargo",
+      "args": ["test"]
     }
   }
 }
@@ -120,7 +121,8 @@ single database query.
   "type": "database-query",
   "environment": "preprod",
   "access": "read-only",
-  "command": "mysql --password={password} app --execute {query}",
+  "program": "mysql",
+  "args": ["--password={password}", "app", "--execute", "{query}"],
   "supplied": ["query"],
   "timeout_seconds": 30,
   "max_output_bytes": 1048576
@@ -129,7 +131,7 @@ single database query.
 
 `{query}` is supplied by the agent at invocation time. `{password}` is resolved
 inside SenpAI from `.senpai/capsules.local.json` and is never printed in the
-resolved command or process output.
+resolved arguments or process output.
 
 ```sh
 senpai init
@@ -138,9 +140,9 @@ senpai run db-preprod --query "SELECT id FROM orders LIMIT 5" --json
 ```
 
 > [!NOTE]
-> Capsules receive no shell, stdin, or TTY. Shell operators, foreground
-> servers, interactive shells, and follow-mode logs are intentionally outside
-> the model.
+> Capsules receive no shell, stdin, or TTY. `program` and `args` are passed
+> directly to the operating system; shell and language interpreters are
+> rejected. This is a guardrail for reviewed manifests, not an OS sandbox.
 
 ## Scoped CLI queries
 

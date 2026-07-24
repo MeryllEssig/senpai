@@ -21,8 +21,8 @@ entry is closed.
   `.senpai/capsules.local.json` values file).
 - Shape of the resolution: a capsule is a bounded, non-interactive command AI
   Manager runs in its own process. Commands requiring no local values and private
-  templates share this one primitive. For a private template, the manifest
-  holds the `command` template; a gitignored local values file holds the value
+  argument arrays share this one primitive. For a private argv declaration, the
+  manifest holds `program` and `args`; a gitignored local values file holds the value
   of each non-supplied `{variable}` (a literal or a `$ENV` reference); the agent
   fills `supplied` variables at call time. This settles the crux question (real
   secret values may live in the local values file, never in the manifest) and
@@ -30,7 +30,7 @@ entry is closed.
 - The two points left open in 2026-07-13 were closed on 2026-07-17 (see 1.10):
   output scrubbing (literal replacement of resolved values in stdout and
   stderr) and the final name ("capsule"). The execution verb was simplified on
-  2026-07-20 to `senpai run`, which also returns the declared template. The
+  2026-07-20 to `senpai run`, which also returns the declared argv. The
   2026-07-22 decision made capsules the sole bounded project-operation abstraction
   before implementation. Interactive and unbounded commands remain explicitly
   unsupported.

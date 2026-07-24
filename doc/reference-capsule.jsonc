@@ -21,20 +21,20 @@
 //     purpose: the overlay merges into the manifest and is agent-readable,
 //     while this file must never be read by the agent.
 //   - Scaffolded by "senpai init": one stub per non-supplied {placeholder}
-//     found in the manifest's capsule templates. Capsules with no local values create no
+//     found in the manifest's capsule args. Capsules with no local values create no
 //     entry here; when no capsule requires local values, this file is not created.
 //     The developer fills the stubs themselves, out of band; SenpAI never
 //     transfers a value.
 //
 // The committed / local boundary (technical-considerations 1.10):
-//   - Whatever the manifest author wrote LITERALLY in a "command" template is
+//   - Whatever the manifest author wrote LITERALLY in "program" and "args" is
 //     committed in the manifest. Every {placeholder} is filled from elsewhere.
 //   - Placeholders listed in the capsule's "supplied" are filled by the AGENT
 //     at call time (for "db-preprod" that is {query}); they are NOT in this
 //     file.
 //   - EVERY OTHER placeholder is filled here, by NAME, with a value that is
 //     either a literal string OR a "$ENV_VAR" reference. Shared non-secret
-//     coordinates should stay literal in the committed command; local
+//     coordinates should stay literal in the committed args; local
 //     placeholders are for secrets or genuinely machine-local values.
 //
 // Each value, independently:
@@ -57,9 +57,9 @@
 //
 // Run the capsule this file backs:
 //   senpai run db-preprod --query "SELECT id FROM orders LIMIT 5"
-// The manifest template is:
-//   "mysql --host=db.preprod.acme.example --user=acme_ro --password={password} acme_shop --execute {query}"
-// Every run result displays this declared template, never its resolved form.
+// The manifest declaration is:
+//   "program": "mysql", "args": ["--host=db.preprod.acme.example", "--user=acme_ro", "--password={password}", "acme_shop", "--execute", "{query}"]
+// Every run result displays this declared argv, never its resolved form.
 // The only non-supplied placeholder filled below is password. {query} is
 // supplied by the agent and is absent here on purpose. Host, user, and database
 // are shared coordinates committed in the manifest for immediate onboarding.

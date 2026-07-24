@@ -316,20 +316,62 @@ pub fn validate(v: &Value) -> Result<(), SenpaiError> {
     }
     Ok(())
 }
-fn placeholders(command: &str) -> Result<Vec<String>, SenpaiError> {
+fn placeholders(value: &str) -> Result<Vec<String>, SenpaiError> {
     let re = Regex::new(r"\{([A-Za-z][A-Za-z0-9_-]*)\}").unwrap();
-    let stripped = re.replace_all(command, "");
+    let stripped = re.replace_all(value, "");
     if stripped.contains('{') || stripped.contains('}') {
         return Err(SenpaiError::new(
             4,
             "invalid_manifest",
-            "Capsule command has unmatched braces.",
+            "Capsule program or argument has unmatched braces.",
         ));
     }
-    Ok(re
-        .captures_iter(command)
-        .map(|c| c[1].to_string())
-        .collect())
+    Ok(re.captures_iter(value).map(|c| c[1].to_string()).collect())
+}
+
+fn is_interpreter(program: &str, args: &[Value]) -> bool {
+    let name = Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(program)
+        .to_ascii_lowercase();
+    if name == "bun" {
+        return !matches!(
+            args,
+            [first, second, ..]
+                if first.as_str() == Some("run")
+                    && second
+                        .as_str()
+                        .is_some_and(|script| {
+                            Regex::new("^[A-Za-z][A-Za-z0-9:_-]*$")
+                                .unwrap()
+                                .is_match(script)
+                        })
+        );
+    }
+    matches!(
+        name.as_str(),
+        "sh" | "bash"
+            | "dash"
+            | "zsh"
+            | "fish"
+            | "ksh"
+            | "csh"
+            | "tcsh"
+            | "pwsh"
+            | "powershell"
+            | "cmd"
+            | "python"
+            | "python3"
+            | "node"
+            | "deno"
+            | "ruby"
+            | "perl"
+            | "php"
+            | "lua"
+            | "busybox"
+            | "env"
+    )
 }
 fn validate_capsule(
     id: &str,
@@ -345,43 +387,53 @@ fn validate_capsule(
             format!("capsules.{id} must be object."),
         )
     })?;
-    let command = o.get("command").and_then(Value::as_str).ok_or_else(|| {
+    let program = o.get("program").and_then(Value::as_str).ok_or_else(|| {
         SenpaiError::new(
             4,
             "invalid_manifest",
-            format!("capsules.{id}.command is required."),
+            format!("capsules.{id}.program is required."),
         )
     })?;
-    let argv = shell_words::split(command).map_err(|_| {
+    if !placeholders(program)?.is_empty() {
+        return Err(SenpaiError::new(
+            4,
+            "invalid_manifest",
+            format!("capsules.{id}.program cannot contain a placeholder."),
+        ));
+    }
+    let args = o.get("args").and_then(Value::as_array).ok_or_else(|| {
         SenpaiError::new(
             4,
             "invalid_manifest",
-            format!("capsules.{id}.command cannot be parsed deterministically."),
+            format!("capsules.{id}.args must be an array."),
         )
     })?;
-    if argv.is_empty() || argv[0].contains('{') {
+    if is_interpreter(program, args) {
         return Err(SenpaiError::new(
             4,
             "invalid_manifest",
-            format!("capsules.{id} executable cannot contain a placeholder."),
+            format!("capsules.{id}.program must not be a shell or language interpreter."),
         ));
     }
-    if command.contains("|")
-        || command.contains(";")
-        || command.contains("&&")
-        || command.contains("||")
-        || command.contains("$(")
-        || command.contains('`')
-        || command.contains('>')
-        || command.contains('<')
-    {
-        return Err(SenpaiError::new(
-            4,
-            "invalid_manifest",
-            format!("capsules.{id}.command contains shell operators."),
-        ));
+    let mut ph = Vec::new();
+    for arg in args {
+        let arg = arg.as_str().ok_or_else(|| {
+            SenpaiError::new(
+                4,
+                "invalid_manifest",
+                format!("capsules.{id}.args must contain only strings."),
+            )
+        })?;
+        let names = placeholders(arg)?;
+        if names.len() > 1 {
+            return Err(SenpaiError::new(
+                4,
+                "invalid_manifest",
+                format!("capsules.{id} has multiple placeholders in one argv element."),
+            ));
+        }
+        ph.extend(names);
     }
-    let ph = placeholders(command)?;
     let unique: BTreeSet<_> = ph.iter().collect();
     if unique.len() != ph.len() {
         return Err(SenpaiError::new(
@@ -389,15 +441,6 @@ fn validate_capsule(
             "invalid_manifest",
             format!("capsules.{id} repeats a placeholder."),
         ));
-    }
-    for a in &argv {
-        if placeholders(a)?.len() > 1 {
-            return Err(SenpaiError::new(
-                4,
-                "invalid_manifest",
-                format!("capsules.{id} has multiple placeholders in one argv element."),
-            ));
-        }
     }
     let supplied: BTreeSet<String> = o
         .get("supplied")
@@ -472,8 +515,12 @@ pub fn capsule_locals(v: &Value) -> Result<HashMap<String, BTreeSet<String>>, Se
                 .filter_map(Value::as_str)
                 .map(str::to_owned)
                 .collect();
-            let locals = placeholders(o["command"].as_str().unwrap())?
-                .into_iter()
+            let locals = o["args"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(Value::as_str)
+                .flat_map(|arg| placeholders(arg).unwrap())
                 .filter(|x| !supplied.contains(x))
                 .collect();
             out.insert(id.clone(), locals);
@@ -551,14 +598,14 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn manifest(capsule_command: &str) -> Value {
+    fn manifest(program: &str, args: Value) -> Value {
         json!({
             "version": 1,
             "project": {"name": "demo", "label": "Demo", "context": "Test", "stack": []},
             "repos": {"app": {"path": "."}},
             "environments": {"local": {"label": "Local", "repo": "app"}},
             "capsules": {
-                "test": {"label": "Test", "type": "test", "command": capsule_command, "repo": "app", "environment": "local"}
+                "test": {"label": "Test", "type": "test", "program": program, "args": args, "repo": "app", "environment": "local"}
             }
         })
     }
@@ -591,15 +638,18 @@ mod tests {
     }
 
     #[test]
-    fn validation_rejects_shell_operators_in_capsules() {
-        let error = validate(&manifest("printf hello | tee output")).unwrap_err();
+    fn validation_rejects_shell_and_language_interpreters_in_capsules() {
+        let error = validate(&manifest("sh", json!(["-c", "echo shell-executed"]))).unwrap_err();
         assert_eq!(error.code, 4);
-        assert!(error.message.contains("shell operators"));
+        assert!(error.message.contains("interpreter"));
+        assert!(validate(&manifest("python3", json!(["-c", "print('executed')"]))).is_err());
+        assert!(validate(&manifest("bun", json!(["run", "test:cli"]))).is_ok());
+        assert!(validate(&manifest("bun", json!(["-e", "console.log('executed')"]))).is_err());
     }
 
     #[test]
     fn capsule_locals_excludes_agent_supplied_values() {
-        let value = manifest("printf '%s:%s' {token} {message}");
+        let value = manifest("printf", json!(["%s:%s", "{token}", "{message}"]));
         let mut value = value;
         value["capsules"]["test"]["supplied"] = json!(["message"]);
         assert_eq!(

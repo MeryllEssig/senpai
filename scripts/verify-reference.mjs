@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { parse as parseShellWords } from "shell-quote";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -68,26 +67,17 @@ function assertAcyclic(records, kind) {
   for (const id of Object.keys(records)) visit(id);
 }
 
-function templatePlaceholders(command, id) {
-  assert(typeof command === "string" && command.trim().length > 0, `capsule ${id} must have a non-empty command`);
+function templatePlaceholders(capsule, id) {
+  assert(typeof capsule.program === "string" && capsule.program.trim().length > 0, `capsule ${id} must have a non-empty program`);
+  assert(!/[{}]/.test(capsule.program), `capsule ${id}.program must be literal`);
+  assert(Array.isArray(capsule.args) && capsule.args.every((arg) => typeof arg === "string"), `capsule ${id}.args must be a string array`);
   const placeholders = [];
-  const remainder = command.replace(/\{([A-Za-z][A-Za-z0-9_-]*)\}/g, (_, name) => {
-    placeholders.push(name);
-    return "";
-  });
-  assert(!/[{}]/.test(remainder), `capsule ${id} has malformed placeholder braces`);
-  assert(!/`|\$(?:\(|\{|[A-Za-z_])/.test(remainder), `capsule ${id} must not contain shell expansion syntax`);
-  let argv;
-  try {
-    argv = parseShellWords(command, () => "");
-  } catch (error) {
-    throw new Error(`capsule ${id} is not a valid shell-words template: ${error.message}`);
-  }
-  assert(argv.length > 0 && argv.every((element) => typeof element === "string"), `capsule ${id} must contain argv words only, without shell operators`);
-  assert(argv[0].length > 0 && !/[{}]/.test(argv[0]), `capsule ${id} must have a literal executable`);
-  for (const element of argv) {
-    const occurrences = [...element.matchAll(/\{[A-Za-z][A-Za-z0-9_-]*\}/g)];
+  for (const element of capsule.args) {
+    const occurrences = [...element.matchAll(/\{([A-Za-z][A-Za-z0-9_-]*)\}/g)];
+    const remainder = element.replace(/\{([A-Za-z][A-Za-z0-9_-]*)\}/g, "");
+    assert(!/[{}]/.test(remainder), `capsule ${id} has malformed placeholder braces`);
     assert(occurrences.length <= 1, `capsule ${id} has multiple placeholders in one argv element`);
+    placeholders.push(...occurrences.map((match) => match[1]));
   }
   assert(new Set(placeholders).size === placeholders.length, `capsule ${id} repeats a placeholder`);
   return new Set(placeholders);
@@ -143,7 +133,7 @@ function assertCapsuleValues(manifest, values) {
   assert(values && typeof values === "object" && !Array.isArray(values), "local capsule values must be an object");
   const expectedCapsules = new Set();
   for (const [id, capsule] of Object.entries(manifest.capsules ?? {})) {
-    const placeholders = templatePlaceholders(capsule.command, id);
+    const placeholders = templatePlaceholders(capsule, id);
     const supplied = new Set(capsule.supplied ?? []);
     for (const name of supplied) assert(placeholders.has(name), `capsule ${id} supplies unknown placeholder ${name}`);
     const localNames = [...placeholders].filter((name) => !supplied.has(name));

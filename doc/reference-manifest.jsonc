@@ -306,16 +306,15 @@
   // test and log examples below do. Private templates retain transcript
   // protection.
   //
-  // Committed / local boundary: whatever is written LITERALLY in "command" is
-  // committed here; every {placeholder} is filled from elsewhere. Placeholders
+  // Committed / local boundary: whatever is written LITERALLY in "program" and
+  // "args" is committed here; every {placeholder} is filled from elsewhere. Placeholders
   // listed in "supplied" are filled by the AGENT at call time; ALL OTHER
   // placeholders are filled from the never-committed local values file.
   //
-  // Execution is argv-based, no shell (technical-considerations 1.10): the
-  // template is split into argv once, then each {placeholder} is substituted
-  // inside its existing element. It can never create another argument, and no
-  // shell re-interprets it: quotes or $(...) are data. Consequence: no pipes or
-  // redirections inside a template. Before returning, SenpAI scrubs both
+  // Execution is argv-based, no shell (technical-considerations 1.10): args
+  // are already structured, then each {placeholder} is substituted inside its
+  // existing element. It can never create another argument, and no shell
+  // re-interprets it: quotes or $(...) are data. Before returning, SenpAI scrubs both
   // stdout and stderr, replacing every resolved non-supplied value with its
   // {name}, so an error that re-echoes its arguments cannot leak a value.
   //
@@ -340,15 +339,16 @@
       "repo": "api_billing",
       // Optional informational pointer to an analogous external MCP tool.
       // SenpAI neither dispatches to it nor applies capsule guarantees to
-      // it; `senpai run` always executes `command`.
+      // it; `senpai run` always executes `program` and `args`.
       "mcp": { "server": "mysql", "tool": "query" },
       // Optional advisory hint for the LLM; SenpAI does not enforce it.
       "access": "read-only",
-      "note": "One-shot SQL against preprod, read-only. SenpAI returns the declared template and scrubbed rows, so the password never enters the transcript.",
+      "note": "One-shot SQL against preprod, read-only. SenpAI returns the declared argv and scrubbed rows, so the password never enters the transcript.",
       // Shared coordinates stay committed for zero-guess onboarding. {query}
       // is supplied by the AGENT; only {password} comes from local values.
-      // Inline substitution stays inside this one pre-parsed argv element.
-      "command": "mysql --host=db.preprod.acme.example --user=acme_ro --password={password} acme_shop --execute {query}",
+      // Inline substitution stays inside this one argv element.
+      "program": "mysql",
+      "args": ["--host=db.preprod.acme.example", "--user=acme_ro", "--password={password}", "acme_shop", "--execute", "{query}"],
       // Placeholders filled by the agent at call time (everything else is local).
       "supplied": ["query"],
       // Safety limits applied by SenpAI. Output is buffered and scrubbed;
@@ -361,7 +361,8 @@
       "type": "test",
       "repo": "api_billing",
       "cwd": "www/api_billing",
-      "command": "make test",
+      "program": "make",
+      "args": ["test"],
       "timeout_seconds": 900
     },
     "logs-local-billing": {
@@ -371,7 +372,8 @@
       "repo": "api_billing",
       "cwd": "www/api_billing",
       "access": "read-only",
-      "command": "docker compose logs --tail=200 app"
+      "program": "docker",
+      "args": ["compose", "logs", "--tail=200", "app"]
     }
   },
 

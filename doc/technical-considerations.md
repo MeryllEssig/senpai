@@ -327,38 +327,36 @@ A `.senpai.local.jsonc` sitting **beside** the resolved `.senpai.jsonc` (same di
 
 A **capsule** is a bounded, non-interactive project command that **SenpAI executes itself, in its own process**. It is the only manifest section that contains executable strings. Tests, builds, setup, bounded log reads, database queries, CSV operations, and deployments all use this primitive whether or not they need private values.
 
-- **Capsules requiring no local values are first-class.** A capsule may have no placeholders, or only agent-supplied placeholders, and may omit `supplied` when the template has none. It requires no entry in the local values file.
-- **Private templates remain transcript-safe.** When non-supplied placeholders exist, SenpAI reads their values inside its own process, resolves the template, runs it, and returns the declared template plus scrubbed stdout/stderr. The resolved command line never enters the agent transcript.
+- **Capsules requiring no local values are first-class.** A capsule may have no placeholders, or only agent-supplied placeholders, and may omit `supplied` when its arguments have none. It requires no entry in the local values file.
+- **Private argv declarations remain transcript-safe.** When non-supplied placeholders exist, SenpAI reads their values inside its own process, resolves the declared arguments, runs them, and returns the declared `program` and `args` plus scrubbed stdout/stderr. Resolved arguments never enter the agent transcript.
 
-- **The committed manifest holds the complete operation declaration.** Each capsule has a human-readable `label`, a `command` template, optional `type`, `cwd`, `repo`, `environment`, `mcp`, `access`, and `note`, plus optional `{variable}` placeholders.
+- **The committed manifest holds the complete operation declaration.** Each capsule has a human-readable `label`, literal `program` and `args`, optional `type`, `cwd`, `repo`, `environment`, `mcp`, `access`, and `note`, plus optional `{variable}` placeholders in an argument.
   - `cwd` is a normalized POSIX path relative to the manifest directory and may not escape it. `/` is the separator on every platform and backslashes are invalid. `.` names the manifest directory; absolute paths, empty segments, `.` segments, and `..` segments are invalid. SenpAI sets the child working directory itself.
-  - A capsule may name a `repo` plus an `environment`. These are validated discovery metadata governed by the scope-coherence rule in 1.6; they do not alter the command.
-  - `mcp` is optional informational metadata `{ server, tool? }` naming an analogous capability exposed by an already configured MCP server. SenpAI does not dispatch to it, install it, assert argument equivalence, or apply capsule guarantees to it. The usage skill only surfaces the hint; a separate external-tool skill, when available, defines whether and how to use that tool. `senpai run` always executes `command`.
-  - **Committed / local boundary rule.** Whatever the author writes **literally** in the template is committed; whatever they turn into a `{variable}` placeholder is filled from elsewhere. The author draws the private/shared line field by field simply by this choice.
+  - A capsule may name a `repo` plus an `environment`. These are validated discovery metadata governed by the scope-coherence rule in 1.6; they do not alter the argv.
+  - `mcp` is optional informational metadata `{ server, tool? }` naming an analogous capability exposed by an already configured MCP server. SenpAI does not dispatch to it, install it, assert argument equivalence, or apply capsule guarantees to it. The usage skill only surfaces the hint; a separate external-tool skill, when available, defines whether and how to use that tool. `senpai run` always executes `program` and `args`.
+  - **Committed / local boundary rule.** Whatever the author writes **literally** in `program` and `args` is committed; whatever they turn into a `{variable}` placeholder in an argument is filled from elsewhere. The author draws the private/shared line field by field simply by this choice.
   - **Who fills each `{variable}`.** Variables declared in optional `supplied` are filled by the agent at call time. All other placeholders are filled from the local values file. Omitting `supplied` is equivalent to `[]`.
 
 - **The local values file holds, per capsule, the VALUE of each non-supplied `{variable}`** - either a literal value or a `$ENV_VAR` reference. It is plain JSON, never committed, gitignored: `.senpai/capsules.local.json` (the directory name aligns to the manifest family; note the spelling without a dash). Its shape is frozen by a commented golden example, [reference-capsule.jsonc](reference-capsule.jsonc), paired with the `capsules` block of the [reference manifest](reference-manifest.jsonc). It lives outside the personal overlay (1.9) on purpose: the overlay merges into the manifest and is therefore agent-readable, while this file must never be read by the agent.
-  Shared non-secret coordinates belong literally in the committed command so a new developer can run `init` without rediscovering them. Non-supplied placeholders are reserved for secrets or genuinely machine-local values.
+  Shared non-secret coordinates belong literally in the committed arguments so a new developer can run `init` without rediscovering them. Non-supplied placeholders are reserved for secrets or genuinely machine-local values.
 
 - **Execution verb:** `senpai run <name> [--param value ...]`. Examples: `senpai run test-api` and `senpai run db-preprod --query "SELECT ..."`.
 
-- **Execution is argv-based, no shell (decided 2026-07-17).** The `command` template is split into argv **once at parse time** (shell-words rules), before substitution. Each non-executable argv element may contain at most one placeholder, optionally surrounded by a literal prefix or suffix such as `--password={password}`, and each placeholder name occurs exactly once in a template. Substitution changes that one element's contents and can never create another argument. An agent-supplied value containing quotes, `;` or `$(...)` is therefore data. Placeholders in the executable, multiple placeholders in one element, shell operators, pipes, and redirections are invalid; a reviewed script may be invoked when a project needs a complex sequence. The supplied names `help`, `json`, `manifest`, and `version` are reserved for CLI options.
+- **Execution is argv-based, no shell.** `program` is one literal executable and `args` is an explicit array; SenpAI performs no shell-word parsing. Each argument may contain at most one placeholder, optionally surrounded by a literal prefix or suffix such as `--password={password}`, and each placeholder name occurs exactly once in a capsule. Substitution changes that one argument's contents and can never create another argument. An agent-supplied value containing quotes, `;` or `$(...)` is therefore data. A placeholder in `program` is invalid. Shell and language interpreters (including `sh`, `bash`, `python`, `node`, `env`, and `busybox`) are rejected as a guardrail against accidental escape from the argv contract; this is not an OS sandbox against a malicious reviewed manifest. The supplied names `help`, `json`, `manifest`, and `version` are reserved for CLI options.
 
-- **Template-visible, resolved-command-hidden output (decided 2026-07-20).** Every `senpai run` result, successful or not, includes the declared command template so the agent knows what shape of command was executed. It never includes the resolved command line. Some commands re-echo their arguments on error, which could leak a value on stderr; before returning, SenpAI replaces, in **both stdout and stderr**, every occurrence of every resolved non-supplied value with its `{name}` placeholder. The exit code passes through untouched, so the agent keeps a usable diagnostic while the values stay masked.
-- **Bounded execution and literal transcript protection.** Capsule output is buffered, capped
-  by `max_output_bytes` (default 1 MiB), and killed after `timeout_seconds`
-  (default 30 seconds). Scrubbing is deterministic longest-value-first literal
+- **Declared-argv-visible, resolved-argv-hidden output.** Every `senpai run` result, successful or not, includes the declared `program` and `args` so the agent knows the shape of the operation. It never includes resolved arguments. Some commands re-echo their arguments on error, which could leak a value on stderr; before returning, SenpAI replaces, in **both stdout and stderr**, every occurrence of every resolved non-supplied value with `{redacted}`. The exit code passes through untouched, so the agent keeps a usable diagnostic while the values stay masked.
+- **Bounded execution and literal transcript protection.** SenpAI reads stdout and stderr as streams, preserves at most `max_output_bytes` (default 1 MiB) across both, and terminates the capsule's entire process group when that cap or `timeout_seconds` (default 30 seconds) is exceeded. Scrubbing is deterministic literal
   replacement and rejects an empty resolved value. It protects the agent
   transcript from an exact resolved value; it does not protect transformed
   values, data intentionally returned by the remote system, shell history, or
   same-machine process inspection. The capsule threat model is therefore
   transcript-leak prevention, not a general secret vault or data-loss-prevention
   boundary. A project may raise the declared limits for a finite build or test,
-  but every run remains bounded.
+  but every run remains bounded. This is execution hygiene, not a general OS sandbox: a project must review its manifest and use service-side access controls for sensitive remote operations.
 
 - **The frontier - what is NOT a capsule:**
   - **Interactive or unbounded commands** are unsupported: no TTY, stdin conversation, foreground server, REPL, or follow-mode stream. Prefer finite equivalents (`logs --tail`, detached services, one-shot queries). SenpAI does not add a second execution abstraction for these cases.
-  - **Shell programs** are unsupported inside templates: no pipes, redirects, substitutions, or shell operators. A reviewed script may implement a complex sequence and be invoked as one argv-based capsule.
+  - **Shell and language interpreters** are unsupported as capsule programs. A reviewed executable may implement a complex sequence, but the manifest itself always declares one literal program and argument array.
   - **Complex external platforms** (`glab`, `gh`, Jira, Redmine) remain driven through the common interface skills and their shipped or custom adapters rather than being reduced to capsule templates.
 
 - **CLI additions and onboarding** (see 2.1):
@@ -372,7 +370,7 @@ A **capsule** is a bounded, non-interactive project command that **SenpAI execut
     material and is suitable for CI; `validate local` additionally checks that
     each non-supplied `{variable}` has a value in the local values file.
   - `doctor` validates the manifest, overlay, and local capsule configuration only. It does not resolve `$ENV` references, inspect installed skills, test credentials, or contact remote systems (see 2.1).
-  - Colleague onboarding: clone -> `senpai init` -> the colleague fills only private or machine-local stubs themselves, out of band -> `validate local` or `doctor` confirms configuration coherence. Shared non-secret coordinates are already committed in capsule commands. Runtime access problems are diagnosed by the agent from the scrubbed command error. SenpAI never transfers a private value.
+  - Colleague onboarding: clone -> `senpai init` -> the colleague fills only private or machine-local stubs themselves, out of band -> `validate local` or `doctor` confirms configuration coherence. Shared non-secret coordinates are already committed in capsule arguments. Runtime access problems are diagnosed by the agent from the scrubbed capsule error. SenpAI never transfers a private value.
 
 - **File topology (flat siblings):**
   - `.senpai.jsonc` - committed manifest (1.1).
@@ -400,7 +398,7 @@ The single entry point between manifests and agents. Responsibilities:
   **capsule field correspondence** and the syntax of `$ENV` references, but
   never whether those names currently resolve.
 - **doctor (decided 2026-07-20)**: a convenience aggregate that validates the resolved manifest, overlay, and local capsule configuration. It checks configuration only. It does not inspect environment-variable availability, installed skills, CLI sessions, credentials, connectivity, remote permissions, or any external service. The agent diagnoses execution failures from the returned error output.
-- **run**: execute a named capsule in SenpAI's own process, optionally resolving private placeholders from the local values file, setting its declared cwd, and returning the declared template plus the scrubbed result (see 1.10).
+- **run**: execute a named capsule in SenpAI's own process, optionally resolving private placeholders from the local values file, setting its declared cwd, and returning the declared `program`/`args` plus the scrubbed result (see 1.10).
 
 The exact v1 subcommands, selectors, exit behavior and JSON envelope are
 defined in [CLI contract](cli-contract.md). They are intentionally small, but

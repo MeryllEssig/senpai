@@ -1,11 +1,17 @@
 use crate::manifest::*;
 use serde_json::{Map, Value, json};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::{
     collections::{BTreeSet, HashMap},
     fs,
-    io::{Read, Seek, SeekFrom},
+    io::Read,
     path::PathBuf,
     process::{Command, Stdio},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -671,15 +677,14 @@ fn run_capsule(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
             private.insert(n, value);
         }
     }
-    let template = o["command"].as_str().unwrap();
-    let argv0 = shell_words::split(template)
-        .map_err(|_| SenpaiError::new(4, "invalid_manifest", "Invalid capsule command."))?;
+    let program = o["program"].as_str().unwrap();
+    let declared_args = o["args"].as_array().unwrap();
     let place = re(r"\{([A-Za-z][A-Za-z0-9_-]*)\}");
-    let argv: Vec<String> = argv0
+    let argv: Vec<String> = declared_args
         .iter()
         .map(|a| {
             place
-                .replace_all(a, |caps: &regex::Captures| {
+                .replace_all(a.as_str().unwrap(), |caps: &regex::Captures| {
                     supplied_values
                         .get(&caps[1])
                         .or_else(|| private.get(&caps[1]))
@@ -700,24 +705,32 @@ fn run_capsule(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
         .get("max_output_bytes")
         .and_then(Value::as_u64)
         .unwrap_or(1_048_576) as usize;
-    let stdout_file = tempfile::tempfile()
-        .map_err(|error| SenpaiError::new(7, "capsule_failed", error.to_string()))?;
-    let stderr_file = tempfile::tempfile()
-        .map_err(|error| SenpaiError::new(7, "capsule_failed", error.to_string()))?;
-    let mut child = Command::new(&argv[0])
-        .args(&argv[1..])
+    let mut command = Command::new(program);
+    command
+        .args(&argv)
         .current_dir(cwd)
         .stdin(Stdio::null())
-        .stdout(Stdio::from(stdout_file.try_clone().map_err(|error| {
-            SenpaiError::new(7, "capsule_failed", error.to_string())
-        })?))
-        .stderr(Stdio::from(stderr_file.try_clone().map_err(|error| {
-            SenpaiError::new(7, "capsule_failed", error.to_string())
-        })?))
-        .spawn()
-        .map_err(|e| {
-            SenpaiError::new(7, "capsule_failed", format!("Capsule could not start: {e}"))
-        })?;
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command.spawn().map_err(|e| {
+        SenpaiError::new(7, "capsule_failed", format!("Capsule could not start: {e}"))
+    })?;
+    let exceeded = Arc::new(AtomicBool::new(false));
+    let captured = Arc::new(AtomicUsize::new(0));
+    let stdout = capture_output(
+        child.stdout.take().unwrap(),
+        limit,
+        Arc::clone(&captured),
+        Arc::clone(&exceeded),
+    );
+    let stderr = capture_output(
+        child.stderr.take().unwrap(),
+        limit,
+        Arc::clone(&captured),
+        Arc::clone(&exceeded),
+    );
     let start = Instant::now();
     let status = loop {
         if let Some(s) = child
@@ -727,31 +740,24 @@ fn run_capsule(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
             break s;
         }
         if start.elapsed() > Duration::from_secs(timeout) {
-            child.kill().ok();
-            child.wait().ok();
+            kill_capsule(&mut child);
+            let (stdout, stderr) = join_output(stdout, stderr);
             return capsule_error(
-                template,
-                "",
-                "",
+                program,
+                declared_args,
+                &stdout,
+                &stderr,
                 None,
                 "Capsule timed out.",
                 private.values(),
             );
         }
-        let bytes = stdout_file
-            .metadata()
-            .map(|metadata| metadata.len())
-            .unwrap_or(0)
-            + stderr_file
-                .metadata()
-                .map(|metadata| metadata.len())
-                .unwrap_or(0);
-        if bytes > limit as u64 {
-            child.kill().ok();
-            child.wait().ok();
-            let (stdout, stderr) = read_output_files(&stdout_file, &stderr_file);
+        if exceeded.load(Ordering::Relaxed) {
+            kill_capsule(&mut child);
+            let (stdout, stderr) = join_output(stdout, stderr);
             return capsule_error(
-                template,
+                program,
+                declared_args,
                 &stdout,
                 &stderr,
                 None,
@@ -761,11 +767,11 @@ fn run_capsule(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
         }
         thread::sleep(Duration::from_millis(10));
     };
-    let (mut stdout, mut stderr) = read_output_files(&stdout_file, &stderr_file);
-    let all = stdout.len() + stderr.len();
-    if all > limit {
+    let (mut stdout, mut stderr) = join_output(stdout, stderr);
+    if exceeded.load(Ordering::Relaxed) {
         return capsule_error(
-            template,
+            program,
+            declared_args,
             &stdout,
             &stderr,
             status.code(),
@@ -779,7 +785,7 @@ fn run_capsule(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
             stderr = stderr.replace(secret, "{redacted}");
         }
     }
-    let result = json!({"command_template":template,"stdout":stdout,"stderr":stderr,"exit_code":status.code()});
+    let result = json!({"program":program,"args":declared_args,"stdout":stdout,"stderr":stderr,"exit_code":status.code()});
     if !status.success() {
         let mut e = SenpaiError::new(7, "capsule_failed", "Capsule process failed.");
         e.details = vec![result];
@@ -787,28 +793,51 @@ fn run_capsule(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
     }
     Ok(result)
 }
+fn capture_output<R: Read + Send + 'static>(
+    mut reader: R,
+    limit: usize,
+    captured: Arc<AtomicUsize>,
+    exceeded: Arc<AtomicBool>,
+) -> thread::JoinHandle<String> {
+    thread::spawn(move || {
+        let mut output = Vec::new();
+        let mut buffer = [0; 8192];
+        while let Ok(read) = reader.read(&mut buffer) {
+            if read == 0 {
+                break;
+            }
+            let start = captured.fetch_add(read, Ordering::Relaxed);
+            let available = limit.saturating_sub(start);
+            output.extend_from_slice(&buffer[..read.min(available)]);
+            if read > available {
+                exceeded.store(true, Ordering::Relaxed);
+            }
+        }
+        String::from_utf8_lossy(&output).into_owned()
+    })
+}
 
-fn read_output_files(stdout_file: &std::fs::File, stderr_file: &std::fs::File) -> (String, String) {
-    let mut stdout = String::new();
-    let mut stderr = String::new();
-    stdout_file
-        .try_clone()
-        .and_then(|mut file| {
-            file.seek(SeekFrom::Start(0))?;
-            file.read_to_string(&mut stdout)
-        })
-        .ok();
-    stderr_file
-        .try_clone()
-        .and_then(|mut file| {
-            file.seek(SeekFrom::Start(0))?;
-            file.read_to_string(&mut stderr)
-        })
-        .ok();
-    (stdout, stderr)
+fn join_output(
+    stdout: thread::JoinHandle<String>,
+    stderr: thread::JoinHandle<String>,
+) -> (String, String) {
+    (
+        stdout.join().unwrap_or_default(),
+        stderr.join().unwrap_or_default(),
+    )
+}
+
+fn kill_capsule(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(-(child.id() as i32), libc::SIGKILL);
+    }
+    child.kill().ok();
+    child.wait().ok();
 }
 fn capsule_error<'a>(
-    template: &str,
+    program: &str,
+    args: &[Value],
     stdout: &str,
     stderr: &str,
     exit: Option<i32>,
@@ -823,7 +852,7 @@ fn capsule_error<'a>(
     }
     let mut e = SenpaiError::new(7, "capsule_failed", message);
     e.details =
-        vec![json!({"command_template":template,"stdout":out,"stderr":err,"exit_code":exit})];
+        vec![json!({"program":program,"args":args,"stdout":out,"stderr":err,"exit_code":exit})];
     Err(e)
 }
 pub fn run(args: Vec<String>) -> i32 {

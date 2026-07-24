@@ -31,7 +31,7 @@ Only `run` executes a process, and it executes capsules only.
   ```
 
   Error text and `details` must never include a secret value, a resolved
-  capsule command, or the contents of the capsule-values file.
+  capsule program or arguments, or the contents of the capsule-values file.
 
 | Exit | Meaning |
 |---:|---|
@@ -54,7 +54,7 @@ senpai summary [--manifest <absolute-path>] [--json]
 contains it, and the project name. `--from` defaults to the process cwd.
 `summary` returns only section names, declared ids, roles, capsule ids and
 types, common interface names, and effective workflow-skill names. It never
-returns command strings.
+returns capsule programs or arguments.
 
 The usage skill calls `resolve` once from the launch directory, retains
 `manifest_path`, then supplies that path to every later command in the session.
@@ -104,8 +104,8 @@ contain the resolved path on a complete path-segment boundary. The longest
 candidate wins; an equal-length tie is an ambiguity error (exit 5) that lists
 candidate ids.
 
-`get capsule` returns the declaration, including its literal command template
-and optional MCP hint, but never local values or a resolved command. The MCP
+`get capsule` returns the declaration, including its literal `program` and `args`
+and optional MCP hint, but never local values or resolved arguments. The MCP
 hint is informational metadata for an external tool skill; it is not an
 alternate `senpai run` backend and inherits none of the capsule runner's
 timeout, output-limit, or scrubbing guarantees.
@@ -153,26 +153,25 @@ parameters is invoked with its id alone.
 Every and only the names declared in `supplied` must occur once; omitted
 `supplied` is equivalent to an empty array. The CLI rejects
 unknown, missing, or repeated supplied names before it loads local values.
-A template may contain zero placeholders. It is parsed to argv before
-substitution. Each argv element may contain at most one placeholder, optionally
-surrounded by literal prefix or suffix text (for example
-`--password={password}`); substitution changes that element's contents but can
-never create another argument. Each placeholder name occurs exactly once in a
-template. Placeholders are forbidden in the executable
-element. Supplied names may not be `help`, `json`, `manifest`, or `version`,
-which are reserved CLI options. The validator rejects unmatched braces,
-multiple placeholders in one element, undeclared supplied names, missing local
-names, empty local values, shell operators, and templates whose executable or
-argument count cannot be parsed deterministically.
+A capsule declares one literal `program` and a literal `args` array. An
+argument may contain zero or one placeholder, optionally surrounded by a
+literal prefix or suffix such as `--password={password}`; substitution changes
+that element's contents but can never create another argument. Each placeholder
+name occurs exactly once in a capsule. Placeholders are forbidden in `program`.
+Supplied names may not be `help`, `json`, `manifest`, or `version`, which are
+reserved CLI options. The validator rejects unmatched braces, multiple
+placeholders in one argument, undeclared supplied names, missing local names,
+empty local values, legacy `command` declarations, and shell or language
+interpreter programs.
 
 The child receives no shell, stdin, or TTY. Its cwd is the manifest directory
 joined with the capsule's optional normalized `cwd`, defaulting to the manifest
 directory. Its combined stdout/stderr is bounded and scrubbed
-before return. Every result, successful or not, exposes the literal
-`command_template` from the manifest and never the resolved command line. In
-Markdown mode, the template is printed before the scrubbed process output. In
-JSON mode, successful `data` contains `command_template`, `stdout`, `stderr`,
-and the child `exit_code`. When the parent exits 7 because the child failed,
+before return. Every result, successful or not, exposes the literal `program`
+and `args` from the manifest and never resolved arguments. In Markdown mode,
+the declared argv is printed before the scrubbed process output. In JSON mode,
+successful `data` contains `program`, `args`, `stdout`, `stderr`, and the child
+`exit_code`. When the parent exits 7 because the child failed,
 timed out, or exceeded the output limit, `error.details` contains one object
 with the same four diagnostic fields when available. `stdout` and `stderr`
 always contain scrubbed text only.

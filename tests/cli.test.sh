@@ -6,7 +6,8 @@ binary="$root/target/debug/senpai"
 cargo build --quiet --manifest-path "$root/Cargo.toml"
 "$binary" --version --json | grep -q '0.1.0'
 workspace=$(mktemp -d)
-trap 'result_code=$?; rm -rf "$workspace"; exit "$result_code"' EXIT
+child_pid=""
+trap 'result_code=$?; if [[ -n $child_pid ]]; then kill "$child_pid" 2>/dev/null || true; fi; rm -rf "$workspace"; exit "$result_code"' EXIT
 
 cat > "$workspace/.senpai.jsonc" <<'EOF'
 {
@@ -21,9 +22,9 @@ cat > "$workspace/.senpai.jsonc" <<'EOF'
   "repos": { "root": { "path": ".", "hosting": { "origin": "demo/root" } }, "app": { "path": "app", "depends_on": ["root"], "hosting": { "origin": "demo/app" } } },
   "environments": { "local": { "label": "Local", "repo": "app" } },
   "capsules": {
-    "echo": { "label": "Echo", "type": "test", "command": "printf '%s' {message}", "supplied": ["message"], "repo": "app", "environment": "local" },
-    "private": { "label": "Private", "command": "printf 'token=%s' {token}" },
-    "limited": { "label": "Bounded", "type": "test", "command": "yes", "max_output_bytes": 1 }
+    "echo": { "label": "Echo", "type": "test", "program": "printf", "args": ["%s", "{message}"], "supplied": ["message"], "repo": "app", "environment": "local" },
+    "private": { "label": "Private", "program": "printf", "args": ["token=%s", "{token}"] },
+    "limited": { "label": "Bounded", "type": "test", "program": "yes", "args": [], "max_output_bytes": 1 }
   }
 }
 EOF
@@ -54,4 +55,36 @@ if limited=$("$binary" run limited --manifest "$workspace/.senpai.jsonc" --json 
   echo 'unbounded capsule unexpectedly passed' >&2; exit 1
 fi
 printf '%s' "$limited" | grep -q 'output limit'
+printf '%s' "$limited" | node -e 'let input=""; process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { const output = JSON.parse(input).error.details[0]; if (Buffer.byteLength(output.stdout) + Buffer.byteLength(output.stderr) > 1) process.exit(1); })'
+shell_manifest="$workspace/shell.jsonc"
+sed 's/"program": "yes", "args": \[\]/"program": "sh", "args": ["-c", "echo shell-executed"]/' "$workspace/.senpai.jsonc" > "$shell_manifest"
+if "$binary" validate manifest --manifest "$shell_manifest" --json >/dev/null; then
+  echo 'shell interpreter unexpectedly validated' >&2; exit 1
+fi
+legacy_manifest="$workspace/legacy.jsonc"
+sed 's/"program": "yes", "args": \[\]/"command": "yes"/' "$workspace/.senpai.jsonc" > "$legacy_manifest"
+if "$binary" validate manifest --manifest "$legacy_manifest" --json >/dev/null; then
+  echo 'legacy command capsule unexpectedly validated' >&2; exit 1
+fi
+cat > "$workspace/child-spawner.rs" <<'EOF'
+use std::{io::{self, Write}, process::Command, thread, time::Duration};
+
+fn main() {
+    let child = Command::new("sleep").arg("30").spawn().unwrap();
+    println!("{}", child.id());
+    io::stdout().flush().unwrap();
+    thread::sleep(Duration::from_secs(30));
+}
+EOF
+rustc "$workspace/child-spawner.rs" -o "$workspace/child-spawner"
+process_manifest="$workspace/process.jsonc"
+sed "s#\"program\": \"yes\", \"args\": \[\], \"max_output_bytes\": 1#\"program\": \"$workspace/child-spawner\", \"args\": [], \"timeout_seconds\": 1#" "$workspace/.senpai.jsonc" > "$process_manifest"
+process_result=$("$binary" run limited --manifest "$process_manifest" --json 2>&1 || true)
+printf '%s' "$process_result" | grep -q 'timed out'
+child_pid=$(printf '%s' "$process_result" | node -e 'let input=""; process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => process.stdout.write(JSON.parse(input).error.details[0].stdout.trim()))')
+[[ $child_pid =~ ^[0-9]+$ ]] || { echo 'child pid was not captured' >&2; exit 1; }
+if kill -0 "$child_pid" 2>/dev/null; then
+  echo 'capsule child process survived timeout' >&2; exit 1
+fi
+child_pid=""
 echo 'CLI tests passed'

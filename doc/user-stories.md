@@ -54,12 +54,12 @@ As a developer, I want a personal, gitignored overlay (`.senpai.local.jsonc`) be
 As a developer, I want to declare an optional structured `"access": "read-only"` marker on a capsule (for example a production database query), so that the LLM receives a concise usage hint without mistaking it for an enforced permission.
 Constraint: `access` is advisory only. SenpAI returns it when present but never interprets or enforces it.
 
-**US-1.16 - Run a templated command without leaking private values**
-As a developer whose database access needs a password, I want a capsule's `command` template to accept optional `{variable}` placeholders, where the agent-supplied ones (like the SQL query) are marked `supplied` and the rest are filled from a never-committed local values file, so that `senpai run` executes it in SenpAI's own process and returns the declared template plus scrubbed output while the resolved private values never enter the agent's transcript.
+**US-1.16 - Run a templated argv without leaking private values**
+As a developer whose database access needs a password, I want a capsule's literal `program` plus `args` array to accept optional `{variable}` placeholders in its arguments, where the agent-supplied ones (like the SQL query) are marked `supplied` and the rest are filled from a never-committed local values file, so that `senpai run` executes it in SenpAI's own process and returns the declared argv plus scrubbed output while the resolved private values never enter the agent's transcript.
 Constraint: the manifest holds no secret values; real values live only in the gitignored `.senpai/capsules.local.json`, read only inside SenpAI's process.
 
 **US-1.17 - Scaffold my local capsule values on join**
-As a developer who just cloned a project that declares capsules, I want `senpai init` to scaffold the local values file with one stub per private or machine-local non-supplied `{variable}`, and `validate local` or `doctor` to confirm every required entry exists and is structurally valid, so that I can complete my own setup out of band without any secret being transferred to me. Shared non-secret coordinates belong literally in the committed command.
+As a developer who just cloned a project that declares capsules, I want `senpai init` to scaffold the local values file with one stub per private or machine-local non-supplied `{variable}`, and `validate local` or `doctor` to confirm every required entry exists and is structurally valid, so that I can complete my own setup out of band without any secret being transferred to me. Shared non-secret coordinates belong literally in the committed arguments.
 
 **US-1.18 - Point a source at a custom skill**
 As a developer whose tracker or code host needs a custom technical integration, I want an optional `skill` field on a source or hosting instance that overrides the adapter selected by the common interface, so that unusual APIs remain usable without mixing their implementation with my project's working procedure.
@@ -90,7 +90,7 @@ Constraint: `doctor` does not inspect environment-variable availability, install
 As an AI agent, I want a `summary` command returning a compact inventory of what this project declares (sections present, ids, roles, capsules, common interfaces, and workflow skills to load) in a few dozen tokens, so that I can decide immediately which scoped queries are worth running.
 
 **US-2.6 - Diagnose a capsule execution without exposing secrets**
-As an AI agent, I want every `senpai run` result, including failures, to contain the declared command template, scrubbed stdout and stderr, and the exit status, so that I can diagnose the command myself without seeing the resolved secret-bearing command line.
+As an AI agent, I want every `senpai run` result, including failures, to contain the declared `program` and `args`, scrubbed stdout and stderr, and the exit status, so that I can diagnose the operation without seeing resolved secret-bearing arguments.
 
 ## Epic 3 - Use the context (usage skills)
 

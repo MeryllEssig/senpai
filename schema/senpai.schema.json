@@ -191,7 +191,12 @@
       "properties": {
         "label": { "type": "string", "minLength": 1 },
         "type": { "type": "string", "minLength": 1 },
-        "command": { "type": "string", "minLength": 1 },
+        "program": { "type": "string", "minLength": 1 },
+        "args": {
+          "type": "array",
+          "default": [],
+          "items": { "type": "string" }
+        },
         "supplied": { "type": "array", "uniqueItems": true, "default": [], "items": { "$ref": "#/$defs/capsuleParameter" } },
         "cwd": { "$ref": "#/$defs/relativePath" },
         "environment": { "$ref": "#/$defs/identifier" },
@@ -202,7 +207,7 @@
         "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 3600, "default": 30 },
         "max_output_bytes": { "type": "integer", "minimum": 1, "maximum": 104857600, "default": 1048576 }
       },
-      "required": ["label", "command"],
+      "required": ["label", "program", "args"],
       "additionalProperties": false
     },
     "documentation": {
