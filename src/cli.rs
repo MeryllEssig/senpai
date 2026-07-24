@@ -127,7 +127,12 @@ fn summary(l: &Loaded) -> Value {
         json!({"id":id,"kind":integration["kind"],"platform":integration["platform"],"handles":integration["handles"]})
     }).collect::<Vec<_>>());
     let capsules=objects(v,"capsules").map(|x|x.iter().map(|(id,c)|json!({"id":id,"type":c.get("type"),"repo":c.get("repo"),"environment":c.get("environment")})).collect::<Vec<_>>());
-    json!({"manifest_path":l.path,"project":v["project"]["name"],"sections":v.as_object().unwrap().keys().filter(|x|*x!="$schema"&&*x!="version"&&*x!="project").collect::<Vec<_>>(),"integrations":integrations,"repos":objects(v,"repos").map(|x|x.keys().collect::<Vec<_>>()),"environments":objects(v,"environments").map(|x|x.keys().collect::<Vec<_>>()),"capsules":capsules})
+    let repos = objects(v, "repos").map(|x| {
+        x.iter()
+            .map(|(id, repo)| json!({"id": id, "labels": repo.get("labels")}))
+            .collect::<Vec<_>>()
+    });
+    json!({"manifest_path":l.path,"project":v["project"]["name"],"sections":v.as_object().unwrap().keys().filter(|x|*x!="$schema"&&*x!="version"&&*x!="project").collect::<Vec<_>>(),"integrations":integrations,"repos":repos,"environments":objects(v,"environments").map(|x|x.keys().collect::<Vec<_>>()),"capsules":capsules})
 }
 
 fn operation_kind(operation: &str) -> Option<&'static str> {

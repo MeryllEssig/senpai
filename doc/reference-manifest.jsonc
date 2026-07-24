@@ -45,8 +45,8 @@
     }
   },
   "repos": {
-    "root": { "path": ".", "role": "orchestrator", "integrations": { "agency_gitlab": "acme/shop-galaxy" } },
-    "api": { "path": "www/api", "depends_on": ["root"], "integrations": { "agency_gitlab": "acme/api" } }
+    "root": { "path": ".", "role": "orchestrator", "labels": ["platform"], "integrations": { "agency_gitlab": "acme/shop-galaxy" } },
+    "api": { "path": "www/api", "labels": ["backend", "critical"], "depends_on": ["root"], "integrations": { "agency_gitlab": "acme/api" } }
   },
   "environments": { "local": { "label": "Local", "repo": "api" } },
   "capsules": { "test": { "label": "API tests", "type": "test", "program": "make", "args": ["test"], "repo": "api", "environment": "local" } },

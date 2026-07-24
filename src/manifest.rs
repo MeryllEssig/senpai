@@ -783,6 +783,16 @@ mod tests {
     }
 
     #[test]
+    fn validation_accepts_repo_labels_and_rejects_duplicates() {
+        let mut valid = manifest("printf", json!(["ok"]));
+        valid["repos"]["app"]["labels"] = json!(["backend", "critical"]);
+        assert!(validate(&valid).is_ok());
+
+        valid["repos"]["app"]["labels"] = json!(["backend", "backend"]);
+        assert!(validate(&valid).is_err());
+    }
+
+    #[test]
     fn capsule_locals_excludes_agent_supplied_values() {
         let value = manifest("printf", json!(["%s:%s", "{token}", "{message}"]));
         let mut value = value;

@@ -33,9 +33,10 @@ the workflow skill, and the effective adapter. Adapter precedence is the
 integration adapter, then `adapter_overrides[kind][platform]`, then the shipped
 common adapter. It does not load a skill or adapter.
 
-`summary` lists integrations and their handled operations. The V1 commands
-`get tracker`, `get ticket-route`, `get hosting`, `get workflow`, and `get
-rules` are removed.
+`summary` lists integrations and their handled operations, plus repository ids
+and labels. `get repo` and `list repos` return each repository's labels. The
+V1 commands `get tracker`, `get ticket-route`, `get hosting`, `get workflow`,
+and `get rules` are removed.
 
 ## Other context and capsules
 

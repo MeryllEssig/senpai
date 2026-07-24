@@ -19,7 +19,7 @@ cat > "$workspace/.senpai.jsonc" <<'EOF'
     "backup": { "kind": "ticketing", "platform": "redmine", "url": "https://backup-tracker.example", "provides": ["ticket.read"], "handles": ["ticket.read"], "routing": { "ticket_id_patterns": ["^#[0-9]+$"], "priority": 20 } },
     "origin": { "kind": "forge", "platform": "gitlab", "url": "https://git.example", "provides": ["code.read", "code.create"], "handles": ["code.read", "code.create"], "workflow": { "policy": { "read": "allow", "create": "confirm" } } }
   },
-  "repos": { "root": { "path": ".", "integrations": { "origin": "demo/root" } }, "app": { "path": "app", "depends_on": ["root"], "integrations": { "origin": "demo/app" } } },
+  "repos": { "root": { "path": ".", "labels": ["platform"], "integrations": { "origin": "demo/root" } }, "app": { "path": "app", "labels": ["backend", "critical"], "depends_on": ["root"], "integrations": { "origin": "demo/app" } } },
   "environments": { "local": { "label": "Local", "repo": "app" } },
   "capsules": {
     "echo": { "label": "Echo", "type": "test", "program": "printf", "args": ["%s", "{message}"], "supplied": ["message"], "repo": "app", "environment": "local" },
@@ -35,6 +35,9 @@ printf '%s' "$result" | grep -q '"ok":true'
 "$binary" resolve operation code.create --repo app --manifest "$workspace/.senpai.jsonc" --json | grep -q 'demo/app'
 "$binary" resolve operation ticket.comment --ticket '#12' --manifest "$workspace/.senpai.jsonc" --json | grep -q '"decision":"confirm"'
 "$binary" get repo --path "$workspace/app/subdir" --with-dependencies --manifest "$workspace/.senpai.jsonc" --json | grep -q '"id":"app"'
+"$binary" get repo --id app --manifest "$workspace/.senpai.jsonc" --json | grep -q '"labels":["backend","critical"]'
+"$binary" list repos --manifest "$workspace/.senpai.jsonc" --json | grep -q '"labels":["backend","critical"]'
+"$binary" summary --manifest "$workspace/.senpai.jsonc" --json | grep -q '"id":"app","labels":["backend","critical"]'
 if "$binary" get tracker --manifest "$workspace/.senpai.jsonc" --json >/dev/null; then
   echo 'obsolete command unexpectedly passed' >&2; exit 1
 fi
