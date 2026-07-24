@@ -1,13 +1,13 @@
 ---
 name: senpai-project-management
-description: Perform common SenpAI ticket operations—read, search, create, comment, transition, link, and log time—using a route selected from the project manifest and a focused adapter for Redmine, Jira, Linear, or a declared custom adapter.
+description: Perform common SenpAI ticket operations after a v2 integration resolution, using a focused adapter for Redmine, Jira, Linear, or a declared custom adapter.
 ---
 
 # Project management interface
 
-Use this skill only after `senpai-use-project-context` has selected a tracker source or ticket route and returned the effective tickets workflow policy. The common operations are `read`, `search`, `create`, `comment`, `transition`, `link`, and `log_time`. Before any operation, confirm the selected source's id, URL, project, roles, and auth metadata. A source-level `skill` is a complete technical adapter override: load it instead of an adapter below.
+Use this skill only after `senpai resolve operation ticket.*` selected one ticketing integration. The common operations are `read`, `create`, `update`, `comment`, `transition`, `link`, and `log_time`; search is part of `read`. Before every operation, use the selected id, URL, scope, and auth metadata. The returned adapter is the complete technical adapter selection.
 
-Enforce the workflow policy before calling an adapter: `read` includes search; the remaining operation maps to its same-named policy capability. Proceed only for `allow`; obtain explicit confirmation for the concrete operation under `confirm`; never attempt `deny`. Then load the configured workflow skill for project procedure. It may narrow permissions but cannot widen them.
+Enforce the resolution's local policy before every adapter call. Proceed only for `allow`; obtain explicit confirmation for the concrete operation under `confirm`; never attempt `deny`. Then load the configured workflow skill; it may narrow permissions but cannot widen them or select another integration.
 
 ## Adapter selection
 

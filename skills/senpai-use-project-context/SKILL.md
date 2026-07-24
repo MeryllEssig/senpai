@@ -1,6 +1,6 @@
 ---
 name: senpai-use-project-context
-description: Use a project's SenpAI manifest to answer requests requiring declared project context or bounded operations, including tickets, code hosting, repositories, environments, documentation, logs, databases, tests, builds, and other capsules. Invoke manually when automatic skill selection is unavailable.
+description: Use a project's SenpAI manifest to answer requests requiring declared project context or bounded operations, including tickets, forges, repositories, environments, documentation, logs, databases, tests, builds, and other capsules. Invoke manually when automatic skill selection is unavailable.
 ---
 
 # Use project context
@@ -9,9 +9,9 @@ Respond in the user's language. This skill is the session orchestrator; it does 
 
 1. From the session launch directory, run `senpai resolve --json` once. Retain `manifest_path`. If it fails, stop: explain that no manifest was resolved and offer setup. Never change directory to find another manifest.
 2. Run `senpai summary --manifest <manifest_path> --json`. Use scoped `get` or `list` commands after that; never dump the manifest.
-3. Match relevant declared rules, then query only the needed capability. For a ticket id, try `get ticket-route` first. If it has no match, use `get tracker --role ticket_details` only when that role has exactly one declared source; this is a deterministic role fallback, not a guess. Report the missing routing pattern and propose the narrowest pattern supported by the observed id. Do not edit the manifest during an unrelated read; use `senpai-manage-project-context` when a manifest update is authorized. Zero or multiple role candidates remain a gap or ambiguity and must not be bypassed.
-4. Run declared bounded operations only through `senpai run`. Read the capsule declaration first when parameters, scope, or its advisory `access` matter. Treat run output as potentially scrubbed diagnostics; diagnose failures from it rather than running `doctor` to probe credentials.
-5. For tickets and code hosting, query the route/target and effective workflow policy first. Check the policy before loading the configured workflow skill. Then use `senpai-project-management` or `senpai-code-hosting`; a declared source/instance `skill` replaces only its technical adapter.
+3. Query ticket work with `senpai resolve operation ticket.<operation> --ticket <id>` and forge work with `senpai resolve operation code.<operation> --repo <id>`. A forge is a code-development platform such as GitHub or GitLab. Use `--integration` only to settle a reported ambiguity; never infer an undeclared target.
+4. Run declared bounded operations only through `senpai run`. Read the capsule declaration first when its parameters or scope matter. Treat run output as potentially scrubbed diagnostics; diagnose failures from it rather than running `doctor` to probe credentials.
+5. For tickets and forges, use this single resolution result before loading its workflow or adapter. Check its local policy for every call; a workflow cannot broaden it or select another integration.
 
 ## Authorization and authentication
 
@@ -25,8 +25,7 @@ Adapters and CLIs targeting declared tracker or hosting URLs use outbound networ
 
 ## Scoped command map
 
-- Ticket source: `senpai get ticket-route --id <id>`; role-driven tracker: `senpai get tracker --role <role>`.
-- Hosting target: `senpai get hosting --role <role> --repo <repo>`.
-- Workflow: `senpai get workflow --domain tickets|code_changes`.
+- Ticket target: `senpai resolve operation ticket.<operation> --ticket <id>`.
+- Forge target: `senpai resolve operation code.<operation> --repo <repo>`.
 - Repository: `senpai get repo --current` or `--path`; add `--with-dependencies` for an ordered multi-repo change.
-- Environment, documentation, rules, and capsules: the corresponding `get` or `list` command in `senpai --help` / the CLI contract.
+- Environment, documentation, and capsules: the corresponding `get` or `list` command in `senpai --help` / the CLI contract.

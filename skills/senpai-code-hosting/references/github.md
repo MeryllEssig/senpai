@@ -3,7 +3,7 @@
 Use the official `gh` CLI. Select the declared host explicitly with
 `--hostname <host>` or a per-command `GH_HOST=<host>` environment setting;
 do not assume github.com for GitHub Enterprise. The repo path comes from the
-selected manifest repository's hosting mapping.
+selected manifest repository's `integrations` mapping.
 
 Useful common mappings: `gh pr view/list` (read), `gh pr create` (create),
 `gh pr edit` (update/reviewers), `gh pr comment` (comment), `gh pr merge`

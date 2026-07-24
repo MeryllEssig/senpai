@@ -12,8 +12,8 @@
 
 SenpAI gives an AI agent the context it needs to work in a project without
 requiring that context to be repeated each session. A commented
-`.senpai.jsonc` manifest describes the project's trackers, code-hosting
-instances, repositories, environments, documentation, workflows, and safe
+`.senpai.jsonc` manifest describes the project's integrations, repositories,
+environments, documentation, per-integration workflows, and safe
 bounded operations. The `senpai` CLI then returns only the relevant slice.
 
 It is designed for Codex, Claude Code, Gemini CLI, OpenCode, and other agents
@@ -30,9 +30,9 @@ Project knowledge is often scattered between people, scripts, ticket trackers,
 code-hosting platforms, and environment-specific runbooks. SenpAI keeps a
 small, reviewable declaration beside the project so an agent can reliably:
 
-- route ticket and code-hosting tasks by declared role;
+- resolve ticket and code-platform operations through declared integrations;
 - understand multi-repository projects and their dependencies;
-- find environments, documentation, rules, and relevant workflows;
+- find environments, documentation, and relevant workflows;
 - run declared tests, diagnostics, exports, or database queries as bounded
   capsules; and
 - keep machine-local preferences and private values out of the shared manifest.
@@ -52,15 +52,24 @@ cargo build --release
 ```jsonc
 // .senpai.jsonc
 {
-  "version": 1,
+  "version": 2,
   "project": {
     "name": "my-service",
     "label": "My Service",
     "context": "API used by the customer portal.",
     "stack": ["Rust", "PostgreSQL"]
   },
+  "integrations": {
+    "origin": {
+      "kind": "forge",
+      "platform": "gitlab",
+      "url": "https://git.example",
+      "provides": ["code.read"],
+      "handles": ["code.read"]
+    }
+  },
   "repos": {
-    "app": { "path": "." }
+    "app": { "path": ".", "integrations": { "origin": "my-group/my-service" } }
   },
   "environments": {
     "local": { "label": "Local development", "repo": "app" }
@@ -109,6 +118,9 @@ SenpAI is deliberately not an orchestration engine: manifest queries never
 contact external services. The only execution surface is `senpai run`, which
 runs a declared capsule.
 
+In a V2 manifest, a `forge` is a code-development platform such as GitHub or
+GitLab: it hosts repositories and provides review and pipeline operations.
+
 ## Capsules: bounded operations without secret leakage
 
 A capsule is a deterministic, non-interactive argv command. It is suitable for
@@ -120,7 +132,6 @@ single database query.
   "label": "Run one read-only query",
   "type": "database-query",
   "environment": "preprod",
-  "access": "read-only",
   "program": "mysql",
   "args": ["--password={password}", "app", "--execute", "{query}"],
   "supplied": ["query"],
@@ -154,9 +165,8 @@ senpai resolve --json
 senpai summary --manifest /absolute/path/.senpai.jsonc --json
 
 senpai get repo --current --with-dependencies --json
-senpai get tracker --role ticket_details --json
-senpai get hosting --role merge_requests --repo app --json
-senpai get workflow --domain code_changes --json
+senpai resolve operation ticket.read --ticket ACME-42 --json
+senpai resolve operation code.read --repo app --json
 senpai list capsules --repo app --env preprod --json
 ```
 

@@ -1,13 +1,13 @@
 ---
 name: senpai-code-hosting
-description: Perform common SenpAI code-hosting operations—read or create/update/comment/review/merge merge requests and read or trigger pipelines—using a role-qualified declared hosting instance and focused GitHub, GitLab, or custom adapter.
+description: Perform common SenpAI forge operations after a v2 integration resolution, using a focused GitHub, GitLab, or custom adapter.
 ---
 
 # Code-hosting interface
 
-Use only after SenpAI has resolved the target repository, selected hosting by role, and returned the effective `code_changes` workflow policy. Operations: `read`, `create`, `update`, `comment`, `request_review`, `merge`, `pipeline_read`, `pipeline_trigger`. Verify that the selected hosting instance is declared for the target repo; do not substitute another mirror.
+Use only after `senpai resolve operation code.* --repo <id>` selected one forge integration. A forge is a code-development platform such as GitHub or GitLab. Operations: `read`, `create`, `update`, `comment`, `request_review`, `merge`, `pipeline_read`, `pipeline_trigger`. The selected integration must be declared on the repository; do not substitute another mirror.
 
-Map each operation directly to its policy capability. `allow` may proceed; `confirm` requires explicit confirmation describing the concrete action and target; `deny` stops. Load the configured workflow only after this check; it describes procedure and cannot broaden permissions. A declared instance `skill` completely replaces the technical adapter.
+Use the returned policy decision. `allow` may proceed; `confirm` requires explicit confirmation; `deny` stops. Load the returned workflow only after this check; it cannot broaden policy. The returned adapter completely selects the technical adapter.
 
 ## Shipped adapter guidance
 

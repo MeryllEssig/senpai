@@ -1,419 +1,54 @@
-// =============================================================================
-// .senpai.jsonc - REFERENCE EXAMPLE ("golden" manifest)
-// =============================================================================
-// This file is the reference example for the SenpAI manifest format. It
-// freezes the schema: every feature described in the spec documents appears
-// here at least once, with the exact field shapes the docs define.
-//
-//   - doc/goal.md                     what SenpAI is and is not
-//   - doc/user-stories.md             who needs what and why
-//   - doc/technical-considerations.md field shapes (sections 1.1 to 1.10)
-//   - doc/notes.md                    cross-cutting process notes
-//
-// The project below is entirely fictional: an "acme" client, example hosts,
-// billing/catalog repos. No real client, company, URL, or credential appears.
-//
-// Ground rules the format guarantees:
-//   - Capsules are the one executable surface. They are bounded,
-//     non-interactive commands SenpAI runs without a shell. A capsule may
-//     require no local values or may use private placeholders resolved inside
-//     SenpAI.
-//     No executable strings appear anywhere else in the manifest.
-//   - No secret values in THIS file. Credentials are referenced by environment
-//     variable NAME only (for example "password_env"), never by value. The one
-//     place a real secret value may sit is the never-committed local values
-//     file ".senpai/capsules.local.json" (gitignored), read only inside
-//     SenpAI's own process when it runs a capsule; its shape is shown in
-//     comments next to the "capsules" block below.
-//   - JSONC. Comments are encouraged: the file should explain itself to
-//     teammates and to AI agents alike.
-//
-// Resolution: the CLI finds this file by walking UP the directory tree from
-// the current working directory, exactly like .git discovery - never down.
-// It can sit at the repo root, in a parent directory of a client repo that
-// must not carry tooling files, or in any plain folder (git is not required).
-// The manifest resolved from the session's launch directory applies to the
-// whole session, subdirectories included: manifests in subdirectories are
-// never consulted, and manifests never merge or inherit from one another
-// (technical-considerations 1.2).
-//
-// Personal overlay: a gitignored .senpai.local.jsonc placed beside this
-// file is deep-merged over it for private paths, preferences, and personal
-// auth or capsule overrides (technical-considerations 1.9). A separate
-// gitignored .senpai/capsules.local.json (note: no dash in the directory)
-// holds the per-capsule values (technical-considerations 1.10); it sits
-// outside the overlay because the overlay is agent-readable and this file
-// must never be. Flat siblings:
-//   .senpai.jsonc            committed manifest (this file)
-//   .senpai.local.jsonc      personal overlay (1.9)
-//   .senpai/capsules.local.json  optional local capsule values, never committed
-// =============================================================================
+// SenpAI manifest v2 reference. It contains no secret values: auth names are
+// read by the selected adapter itself.
 {
-  // Editor association for completion and diagnostics. This URI is stable for
-  // every v1 manifest; the top-level `version` remains the compatibility key.
-  "$schema": "https://senpai.dev/schema/v1/senpai.schema.json",
-
-  // Manifest schema version, present from day one so the schema can evolve
-  // without breaking existing manifests. Integer, starts at 1.
-  "version": 1,
-
-  // ---------------------------------------------------------------------------
-  // Project identity
-  // ---------------------------------------------------------------------------
-  // Who this project is. "context" is free text addressed to the AI agent:
-  // anything a new teammate would need on day one belongs there.
+  "$schema": "https://senpai.dev/schema/v2/senpai.schema.json",
+  "version": 2,
   "project": {
-    // Machine-friendly identifier (slug).
     "name": "acme-shop",
-    // Human-friendly display name.
     "label": "ACME Online Shop",
-    // Free-text context for the AI. Keep it short and factual.
-    "context": "E-commerce platform built by the agency for the ACME client. Multi-repo galaxy: a root orchestrator repo plus interdependent sub-repos under www/. Two synchronized GitLab instances: merge requests and test pipelines on the agency instance, deployment pipelines on the client instance. Ticket details are authoritative on the client Jira; time is booked on the agency Redmine, currently on the dedicated build-phase project space (see trackers).",
-    // Free-form technology hints for the agent, not an enum.
-    "stack": ["php 8.3 / symfony 7", "vue 3", "mysql 8", "elasticsearch 8", "solr 9", "redis 7"]
+    "context": "Multi-repository ACME e-commerce project.",
+    "stack": ["php 8.3 / symfony 7", "vue 3"]
   },
-
-  // ---------------------------------------------------------------------------
-  // Trackers: several sources, routed by function (technical-considerations 1.3)
-  // ---------------------------------------------------------------------------
-  // Routing is by FUNCTION, never by theme (no bug/chore split). Each source
-  // declares the "roles" it plays; the agent routes actions accordingly:
-  //   - "ticket_details": the authoritative source ("makes foi") for reading a
-  //     ticket's content. Usually the client's tracker.
-  //   - "time_logging": where time spent is booked. Usually our internal
-  //     tracker; may name a catch-all ticket for time with no dedicated ticket.
-  //   - "external_refs": a source that cross-links references to/from another.
-  //   - "hosting_requests": a tracker used to open/read hosting-provider
-  //     requests; does NOT make foi. (When the hosting team is in the same
-  //     company, this can be a separate project space on "internal" instead.)
-  // The role set is open (LLM-readable strings), not a closed enum.
-  //
-  // Optional "auth" on a source (same on code_hosting instances) declares how
-  // the selected platform adapter authenticates; tools differ, so the mode
-  // does too:
-  //   - "preconfigured" (default when "auth" is absent): the external tool is
-  //     already set up on the machine; authentication stays with the user.
-  //   - "env": credentials live in environment variables referenced by NAME
-  //     ("api_key_env", "token_env", "password_env"...); the adapter reads
-  //     the named variable itself, never exposing the value to the agent.
-  //   - "interactive": when supported, the adapter starts a login flow and
-  //     hands over to the user to complete it.
-  // Secret VALUES are forbidden in this file in every mode. If the agent has
-  // no way to authenticate without reading a secret value itself, it must
-  // stop entirely and ask the user how to proceed (core behavior).
-  //
-  // Optional "skill" on a source (same on code_hosting instances) overrides
-  // the technical adapter selected by the common senpai-project-management
-  // or senpai-code-hosting interface. Project working instructions belong
-  // in "workflows", not in a source adapter.
-  "trackers": {
-  // Source types shown in the docs: "redmine", "jira", "linear". The set is
-  // intentionally open so custom platforms do not require a schema release.
-    "sources": {
-      // The client's tracker: authoritative for ticket content, read ticket
-      // details here. No "auth": the Jira adapter is assumed preconfigured, the
-      // user keeps full control of authentication.
-      "client": {
-        "type": "jira",
-        "url": "https://acme.atlassian.net",
-        "project": "ACME",
-        // Self-identifying tickets route here without a lookup. `priority`
-        // handles genuine bare-number fallback; lower is preferred.
-        "ticket_id_patterns": ["^ACME-[1-9][0-9]*$"],
-        "priority": 10,
-        "roles": ["ticket_details"]
-      },
-      // The agency tracker: where time is booked during the build phase, and
-      // where the client reference is carried back. The embedded Redmine REST
-      // script reads the named environment variable itself.
-      "internal": {
-        "type": "redmine",
-        "url": "https://redmine.agency.example",
-        "project": "acme-build",
-        "ticket_id_patterns": ["^#[1-9][0-9]*$", "^[1-9][0-9]*$"],
-        "priority": 20,
-        "auth": { "mode": "env", "api_key_env": "REDMINE_AGENCY_API_KEY" },
-        "roles": ["time_logging", "external_refs"],
-        // Optional catch-all ticket to book time with no dedicated ticket.
-        "time_logging": { "catch_all_ticket": "9876" }
-      },
-      // A hosting provider's tracker: NOT authoritative ("does not make foi"),
-      // used only to open and read hosting requests. When the hosting team is
-      // inside the same company, this can instead be a separate project space
-      // on the "internal" source rather than a distinct source.
-      "hosting": {
-        "type": "redmine",
-        "url": "https://redmine.hosting-provider.example",
-        "project": "hosting-acme",
-        "roles": ["hosting_requests"],
-        // Technical adapter override for a provider-specific Redmine API.
-        // Business procedure remains in the ticket workflow below.
-        "skill": "acme-hosting-redmine-adapter"
-      }
-    }
-    // No single "write_target": actions route by role. Reading details -> the
-    // "ticket_details" source; booking time -> the "time_logging" source. The
-    // build -> maintenance lifecycle move is a one-line change to the "project"
-    // of the "internal" source (from "acme-build" to "maintenance-general").
+  "adapter_overrides": {
+    "ticketing": { "redmine": { "skill": "acme-redmine-adapter" } }
   },
-
-  // ---------------------------------------------------------------------------
-  // Code hosting: synchronized instances with roles (technical-considerations 1.5)
-  // ---------------------------------------------------------------------------
-  // Each hosting endpoint is declared once, with "roles" stating which
-  // operations belong to it. With roles declared, "create the MR" routes to
-  // "dev" and "trigger the deployment" routes to "ops" without any
-  // per-request instruction. A single-instance project declares one instance
-  // holding every role.
-  "code_hosting": {
-    "instances": {
-      "dev": {
-        "platform": "gitlab",
-        "url": "https://gitlab.agency.example",
-        // The agent picks the instance by role.
-        "roles": ["merge_requests", "test_pipelines"],
-        // Auth mode "env": if glab is not yet configured for this instance,
-        // the agent may run the login itself with the variable by name.
-        "auth": { "mode": "env", "token_env": "GITLAB_AGENCY_TOKEN" }
-      },
-      "ops": {
-        "platform": "gitlab",
-        "url": "https://gitlab.client.example",
-        "roles": ["deployment_pipelines"],
-        // Auth mode "interactive": the agent may start "glab auth login" for
-        // this instance but the user completes the flow.
-        "auth": { "mode": "interactive" }
-      }
-    }
-  },
-
-  // ---------------------------------------------------------------------------
-  // Project workflows: permission policy + working instructions (1.6)
-  // ---------------------------------------------------------------------------
-  // Policy says WHETHER an operation may happen. The workflow skill says HOW
-  // permitted work is performed: statuses, comments, MR links, reviewers, and
-  // sequencing. Instructions can never broaden policy. "confirm" requires
-  // explicit user confirmation for the concrete operation. An omitted "read"
-  // defaults to "allow"; every other omitted capability defaults to "deny".
-  //
-  // If an entire domain is omitted, SenpAI loads its read-only default:
-  // senpai-project-use-ticket-workflow or
-  // senpai-project-use-code-hosting-workflow. A declared domain requires
-  // both "skill" and "policy". Custom skill names are free.
-  "workflows": {
-    "tickets": {
-      "skill": "acme-project-ticket-workflow",
-      "policy": {
-        "read": "allow",
-        "create": "confirm",
-        "comment": "allow",
-        "transition": "confirm",
-        "link": "allow",
-        "log_time": "allow"
-      }
+  "integrations": {
+    "client_jira": {
+      "kind": "ticketing",
+      "platform": "jira",
+      "url": "https://acme.atlassian.net",
+      "scope": { "project_key": "ACME" },
+      "provides": ["ticket.read", "ticket.comment", "ticket.transition"],
+      "handles": ["ticket.read", "ticket.comment"],
+      "routing": { "ticket_id_patterns": ["^ACME-[1-9][0-9]*$"], "priority": 10 },
+      "workflow": { "skill": "acme-ticket-workflow", "policy": { "read": "allow", "comment": "confirm" } }
     },
-    "code_changes": {
-      "skill": "acme-project-code-hosting-workflow",
-      "policy": {
-        "read": "allow",
-        "create": "allow",
-        "update": "allow",
-        "comment": "allow",
-        "request_review": "allow",
-        "merge": "confirm",
-        "pipeline_read": "allow",
-        "pipeline_trigger": "confirm"
-      }
+    "agency_redmine": {
+      "kind": "ticketing",
+      "platform": "redmine",
+      "url": "https://redmine.agency.example",
+      "scope": { "project_identifier": "acme-build" },
+      "auth": { "mode": "env", "api_key_env": "REDMINE_AGENCY_API_KEY" },
+      "provides": ["ticket.read", "ticket.log_time"],
+      "handles": ["ticket.log_time"],
+      "routing": { "ticket_id_patterns": ["^#[1-9][0-9]*$"], "priority": 20 },
+      "workflow": { "policy": { "log_time": "confirm" } }
+    },
+    "agency_gitlab": {
+      "kind": "forge",
+      "platform": "gitlab",
+      "url": "https://gitlab.agency.example",
+      "auth": { "mode": "env", "token_env": "GITLAB_AGENCY_TOKEN" },
+      "provides": ["code.read", "code.create", "code.update", "code.comment", "code.request_review", "code.pipeline_read"],
+      "handles": ["code.read", "code.create", "code.update", "code.comment", "code.request_review", "code.pipeline_read"],
+      "workflow": { "skill": "acme-code-workflow", "policy": { "read": "allow", "create": "confirm", "update": "confirm", "comment": "confirm", "request_review": "confirm", "pipeline_read": "allow" } }
     }
   },
-
-  // ---------------------------------------------------------------------------
-  // Repos: the multi-repo galaxy (technical-considerations 1.4 and 1.5)
-  // ---------------------------------------------------------------------------
-  // One manifest at the galaxy root describes the members and their
-  // "depends_on" edges. "role" is a free-form hint for the agent, not an enum
-  // the CLI interprets. "path" is relative to the directory containing this
-  // manifest. "hosting" maps instance ids (declared above) to the repo's path
-  // on that instance; mirrors can differ in namespace, and a repo may exist
-  // on only one instance.
   "repos": {
-    // The galaxy root: orchestration scripts, CI, provisioning.
-    "root": {
-      "path": ".",
-      "role": "orchestrator",
-      "hosting": { "dev": "acme/shop-galaxy" }
-    },
-    // Shared code consumed by the other members.
-    "bundle_core": {
-      "path": "www/bundle_core",
-      "role": "shared bundle (domain entities, helpers)",
-      // Internal-only repo: present on the dev instance, not mirrored.
-      "hosting": { "dev": "acme/bundle-core" }
-    },
-    "api_billing": {
-      "path": "www/api_billing",
-      "role": "api",
-      "depends_on": ["bundle_core"],
-      // Instance id -> repo path on that instance.
-      "hosting": { "dev": "acme/api-billing", "ops": "client-mirror/api-billing" }
-    },
-    "front_billing": {
-      "path": "www/front_billing",
-      "role": "front",
-      "depends_on": ["api_billing"],
-      "hosting": { "dev": "acme/front-billing", "ops": "client-mirror/front-billing" }
-    },
-    "front_catalog": {
-      "path": "www/front_catalog",
-      "role": "front",
-      "depends_on": ["bundle_core"],
-      "hosting": { "dev": "acme/front-catalog", "ops": "client-mirror/front-catalog" }
-    }
+    "root": { "path": ".", "role": "orchestrator", "integrations": { "agency_gitlab": "acme/shop-galaxy" } },
+    "api": { "path": "www/api", "depends_on": ["root"], "integrations": { "agency_gitlab": "acme/api" } }
   },
-
-  // ---------------------------------------------------------------------------
-  // Environments: logical targets only (technical-considerations 1.6)
-  // ---------------------------------------------------------------------------
-  // Environment ids are free-form map keys; the suggested (not enforced)
-  // convention is dev / preprod (staging) / prod. This example uses preprod
-  // and prod (technical-considerations 1.6).
-  // Concrete operations against an environment are capsules below.
-  "environments": {
-    "local": {
-      "label": "Local development",
-      "url": "http://localhost:8080",
-      "repo": "api_billing"
-    },
-    "preprod": {
-      "label": "Preprod (staging)",
-      "url": "https://preprod.shop.acme.example",
-      "repo": "api_billing",
-      "note": "Deployment target for integration testing. Use declared capsules for logs and data access."
-    },
-    "prod": {
-      "label": "Production",
-      "url": "https://shop.acme.example",
-      "repo": "api_billing",
-      "note": "Production operations are restricted by the rules below."
-    }
-  },
-
-  // ---------------------------------------------------------------------------
-  // Capsules: every bounded project command SenpAI runs (1.10)
-  // ---------------------------------------------------------------------------
-  // A capsule is a bounded, non-interactive command SenpAI executes itself.
-  // It may require no local values and contain no placeholders at all, as the
-  // test and log examples below do. Private templates retain transcript
-  // protection.
-  //
-  // Committed / local boundary: whatever is written LITERALLY in "program" and
-  // "args" is committed here; every {placeholder} is filled from elsewhere. Placeholders
-  // listed in "supplied" are filled by the AGENT at call time; ALL OTHER
-  // placeholders are filled from the never-committed local values file.
-  //
-  // Execution is argv-based, no shell (technical-considerations 1.10): args
-  // are already structured, then each {placeholder} is substituted inside its
-  // existing element. It can never create another argument, and no shell
-  // re-interprets it: quotes or $(...) are data. Before returning, SenpAI scrubs both
-  // stdout and stderr, replacing every resolved non-supplied value with its
-  // {name}, so an error that re-echoes its arguments cannot leak a value.
-  //
-  // Run it: senpai run db-preprod --query "SELECT id FROM orders LIMIT 5"
-  //
-  // Matching .senpai/capsules.local.json (gitignored, NEVER committed;
-  // scaffolded by "senpai init", one stub per non-supplied placeholder;
-  // full golden example in doc/reference-capsule.jsonc):
-  //   {
-  //     "db-preprod": {
-  //       "password": "$ACME_PREPROD_DB_PASSWORD"   // literal value OR $ENV ref
-  //     }
-  //   }
-  // "validate local" and "doctor" check every non-supplied placeholder has a
-  // structurally valid value here. They validate "$ENV" reference syntax but
-  // do not inspect whether the named variable currently exists.
-  "capsules": {
-    "db-preprod": {
-      "label": "Run one read-only SQL query against the preprod billing database",
-      "type": "database-query",
-      "environment": "preprod",
-      "repo": "api_billing",
-      // Optional informational pointer to an analogous external MCP tool.
-      // SenpAI neither dispatches to it nor applies capsule guarantees to
-      // it; `senpai run` always executes `program` and `args`.
-      "mcp": { "server": "mysql", "tool": "query" },
-      // Optional advisory hint for the LLM; SenpAI does not enforce it.
-      "access": "read-only",
-      "note": "One-shot SQL against preprod, read-only. SenpAI returns the declared argv and scrubbed rows, so the password never enters the transcript.",
-      // Shared coordinates stay committed for zero-guess onboarding. {query}
-      // is supplied by the AGENT; only {password} comes from local values.
-      // Inline substitution stays inside this one argv element.
-      "program": "mysql",
-      "args": ["--host=db.preprod.acme.example", "--user=acme_ro", "--password={password}", "acme_shop", "--execute", "{query}"],
-      // Placeholders filled by the agent at call time (everything else is local).
-      "supplied": ["query"],
-      // Safety limits applied by SenpAI. Output is buffered and scrubbed;
-      // a larger result must be narrowed by the caller rather than streamed.
-      "timeout_seconds": 30,
-      "max_output_bytes": 1048576
-    },
-    "test-api-billing": {
-      "label": "Run the billing API test suite",
-      "type": "test",
-      "repo": "api_billing",
-      "cwd": "www/api_billing",
-      "program": "make",
-      "args": ["test"],
-      "timeout_seconds": 900
-    },
-    "logs-local-billing": {
-      "label": "Read the last 200 local billing API log lines",
-      "type": "logs",
-      "environment": "local",
-      "repo": "api_billing",
-      "cwd": "www/api_billing",
-      "access": "read-only",
-      "program": "docker",
-      "args": ["compose", "logs", "--tail=200", "app"]
-    }
-  },
-
-  // ---------------------------------------------------------------------------
-  // Documentation locations (technical-considerations 1.6)
-  // ---------------------------------------------------------------------------
-  // Each entry declares exactly one location field: "path" (local, relative
-  // to the directory containing this manifest), "url" (remote page or space),
-  // or "repository_url" (remote repository holding documentation). The
-  // optional "repo" scope names a declared galaxy member and never carries a URL.
-  "docs": {
-    "functional": {
-      "path": "doc/functional",
-      "repo": "api_billing",
-      "label": "Functional specifications (markdown, versioned with the galaxy)"
-    },
-    "wiki": {
-      "url": "https://wiki.agency.example/acme-shop",
-      "label": "Agency wiki space for the project"
-    },
-    "architecture": {
-      "repository_url": "https://gitlab.agency.example/acme/architecture-docs.git",
-      "label": "Architecture decision records"
-    }
-  },
-
-  // ---------------------------------------------------------------------------
-  // IF-THEN intent rules and guardrails (technical-considerations 1.8)
-  // ---------------------------------------------------------------------------
-  // A declarative routing table from intents to approaches. "if" is a
-  // plain-language condition the agent recognizes in the user's request;
-  // "then" is the instruction to follow. SenpAI does not interpret rules;
-  // the agent maps them to a declared capsule or external tool skill. Routine
-  // ticket and code-hosting policy and procedure live in "workflows"; rules
-  // remain for cross-cutting or exceptional guardrails.
-  "rules": [
-    { "if": "preprod database access is needed", "then": "run the 'db-preprod' capsule with the narrowest possible query" },
-
-    { "if": "local billing logs are needed", "then": "run the 'logs-local-billing' capsule; do not start a follow-mode stream" },
-
-    { "if": "an operation would write to the prod database", "then": "do not do it; the prod database is strictly read-only for agents, ask the user instead" }
-  ]
+  "environments": { "local": { "label": "Local", "repo": "api" } },
+  "capsules": { "test": { "label": "API tests", "type": "test", "program": "make", "args": ["test"], "repo": "api", "environment": "local" } },
+  "docs": { "architecture": { "path": "doc/architecture.md", "repo": "root", "label": "Architecture" } }
 }

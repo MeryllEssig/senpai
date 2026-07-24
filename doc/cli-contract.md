@@ -1,177 +1,58 @@
-# SenpAI CLI Contract — v1 foundation
+# SenpAI CLI contract — manifest v2
 
-This document fixes the public contract needed for the first vertical slice.
-It does not turn SenpAI into an orchestration engine: `get` commands only
-read the manifest and never contact a tracker or hosting service.
-Only `run` executes a process, and it executes capsules only.
+All manifest reads accept `--manifest <absolute-path>` and never contact a
+remote service. JSON output is `{ "ok": true, "data": …, "warnings": [] }`;
+errors are `{ "ok": false, "error": { "code": "…", "message": "…", "details": [] } }`.
+No result, error, or adapter handoff contains a secret value.
 
-## Common behavior
-
-- The executable name is `senpai`.
-- A command that reads a manifest accepts `--manifest <absolute-path>`. With
-  this option, it must use exactly that file and must not walk the directory
-  tree. Without it, it resolves from its current directory by walking upward.
-- `--json` emits the stable JSON protocol below. Without it, the command emits
-  compact Markdown for an LLM. Both modes write results to stdout and
-  diagnostics only to stderr.
-- Successful JSON output is:
-
-  ```json
-  { "ok": true, "data": {}, "warnings": [] }
-  ```
-
-  `data` is an object for one result and an array only when the command's name
-  says it lists results. `warnings` is always present and contains objects with
-  `code` and `message`.
-
-- Error JSON output is:
-
-  ```json
-  { "ok": false, "error": { "code": "…", "message": "…", "details": [] } }
-  ```
-
-  Error text and `details` must never include a secret value, a resolved
-  capsule program or arguments, or the contents of the capsule-values file.
-
-| Exit | Meaning |
-|---:|---|
-| 0 | success |
-| 2 | invalid CLI syntax or incompatible options |
-| 3 | manifest, declared id, or declared capability not found |
-| 4 | invalid manifest, overlay, schema, or cross-reference |
-| 5 | routing ambiguity requiring an explicit selector or user input |
-| 6 | missing or incomplete local capsule configuration |
-| 7 | capsule process failed, timed out, or exceeded its output limit |
-
-## Resolution and inventory
+## Integration resolution
 
 ```text
-senpai resolve [--from <directory>] [--json]
-senpai summary [--manifest <absolute-path>] [--json]
+senpai resolve operation <operation> [--ticket <id> | --repo <repo-id>]
+  [--integration <id>] [--manifest <path>] [--json]
 ```
 
-`resolve` returns the canonical absolute `manifest_path`, the directory that
-contains it, and the project name. `--from` defaults to the process cwd.
-`summary` returns only section names, declared ids, roles, capsule ids and
-types, common interface names, and effective workflow-skill names. It never
-returns capsule programs or arguments.
+The only operations in v2 are:
 
-The usage skill calls `resolve` once from the launch directory, retains
-`manifest_path`, then supplies that path to every later command in the session.
+- `ticket.read`, `ticket.create`, `ticket.update`, `ticket.comment`,
+  `ticket.transition`, `ticket.link`, `ticket.log_time`
+- `code.read`, `code.create`, `code.update`, `code.comment`,
+  `code.request_review`, `code.merge`, `code.pipeline_read`,
+  `code.pipeline_trigger`
 
-## Scoped reads
+Ticket operations require `--ticket`; code operations require `--repo`.
+Resolution selects one integration that has the matching `kind`, handles the
+operation, and—for code operations—is mapped on the repository. A ticket
+routing pattern narrows candidates; lower local `routing.priority` wins.
+Unresolved ties exit 5 with candidate ids. `--integration` is only a
+disambiguator: it must satisfy all the same conditions.
+
+The result includes the integration's public coordinates and auth metadata,
+the normalized route, the complete local policy plus the requested decision,
+the workflow skill, and the effective adapter. Adapter precedence is the
+integration adapter, then `adapter_overrides[kind][platform]`, then the shipped
+common adapter. It does not load a skill or adapter.
+
+`summary` lists integrations and their handled operations. The V1 commands
+`get tracker`, `get ticket-route`, `get hosting`, `get workflow`, and `get
+rules` are removed.
+
+## Other context and capsules
+
+`resolve [--from <directory>]`, `summary`, `get repo`, `get environment`,
+`get capsule`, `get docs`, `list repos`, `list capsules`, `init`, `validate`,
+`doctor`, and `run` retain their v1-safe behavior. Capsules remain the sole
+execution primitive: literal argv only, no shell, bounded output, timeout, and
+secret scrubbing.
+
+## Migration
 
 ```text
-senpai get tracker --role <role> [--source <source-id>] [--manifest <path>] [--json]
-senpai get ticket-route --id <ticket-id> [--source <source-id>] [--manifest <path>] [--json]
-senpai get hosting --role <role> --repo <repo-id> [--instance <instance-id>] [--manifest <path>] [--json]
-senpai get workflow --domain <tickets|code_changes> [--manifest <path>] [--json]
-senpai get repo (--id <repo-id> | --path <path> | --current) [--with-dependencies] [--manifest <path>] [--json]
-senpai list repos [--manifest <path>] [--json]
-senpai get environment --id <environment-id> [--manifest <path>] [--json]
-senpai get capsule --id <capsule-id> [--manifest <path>] [--json]
-senpai list capsules [--repo <repo-id>] [--env <environment-id>] [--type <type>] [--manifest <path>] [--json]
-senpai get docs [--id <docs-id>] [--manifest <path>] [--json]
-senpai get rules [--manifest <path>] [--json]
+senpai migrate v1 --manifest <absolute-v1-manifest> [--json]
 ```
 
-`get ticket-route` returns a source selection, not ticket content. The usage
-skill passes that selection to `senpai-project-management`, which uses the
-source's default or custom adapter. An ambiguous route exits 5 and lists
-candidate ids only.
-
-`get tracker` and `get hosting` apply the role-selection rules in technical
-considerations 1.3. An explicit `--source` or `--instance` is valid only when
-that declaration actually holds the requested role. `get hosting` additionally
-requires that the selected instance occurs in the selected repo's `hosting`
-map.
-
-`get workflow` returns the requested `domain`, its effective `skill`, and its
-fully expanded `policy`. A declared domain always supplies its skill; otherwise
-the skill is
-`senpai-project-use-ticket-workflow` for `tickets` or
-`senpai-project-use-code-hosting-workflow` for `code_changes`. The expanded
-policy contains every capability defined for that domain: an omitted `read`
-is `allow`, and every other omitted capability is `deny`. This command reads
-configuration only; it does not load or inspect the named skill.
-
-`--path` accepts an absolute path or a path relative to the process cwd; the
-path does not need to exist. The CLI resolves it lexically to a normalized path
-relative to the manifest directory and rejects a path outside that directory.
-Manifest paths use `/` separators on every platform; backslashes are invalid.
-`--current` uses the process cwd. Repo candidates are declaration paths that
-contain the resolved path on a complete path-segment boundary. The longest
-candidate wins; an equal-length tie is an ambiguity error (exit 5) that lists
-candidate ids.
-
-`get capsule` returns the declaration, including its literal `program` and `args`
-and optional MCP hint, but never local values or resolved arguments. The MCP
-hint is informational metadata for an external tool skill; it is not an
-alternate `senpai run` backend and inherits none of the capsule runner's
-timeout, output-limit, or scrubbing guarantees.
-`list capsules` returns compact
-metadata only: id, label, type, repo, environment, MCP server/tool, and access.
-A capsule that names only an environment inherits that environment's repo for filtering.
-Filters combine with AND semantics.
-
-Every scoped result includes its `id`, its source section, its relevant
-`access`, `note`, `repo`, `environment`, `auth` variable *names*, and custom
-adapter `skill` when those facts exist. It never expands an
-environment-variable value.
-
-## Local setup and diagnostics
-
-```text
-senpai init [--manifest <path>] [--json]
-senpai validate manifest [--manifest <path>] [--json]
-senpai validate local [--manifest <path>] [--json]
-senpai doctor [--manifest <path>] [--json]
-```
-
-`init` is idempotent: when at least one capsule has a non-supplied placeholder,
-it creates the values file, its ignore file, and the missing stubs, but never
-changes an existing value. With no such placeholder it creates neither local
-file. `validate manifest` is
-machine-independent and is the CI command. `validate local` additionally
-checks the locally stored capsule placeholders and `$ENV` reference syntax; an
-absent values file is valid when no capsule needs one.
-`doctor` is a convenience aggregate for validating the resolved manifest,
-overlay, and local capsule configuration. It checks configuration only: it
-does not inspect environment-variable availability, installed skills, CLI
-sessions, credentials, connectivity, remote authorization, or any external
-service.
-
-## Capsule execution
-
-```text
-senpai run <capsule-id> [--<supplied-name> <value> …] [--manifest <path>] [--json]
-```
-
-`run` accepts only ids from the `capsules` section. A capsule with no supplied
-parameters is invoked with its id alone.
-
-Every and only the names declared in `supplied` must occur once; omitted
-`supplied` is equivalent to an empty array. The CLI rejects
-unknown, missing, or repeated supplied names before it loads local values.
-A capsule declares one literal `program` and a literal `args` array. An
-argument may contain zero or one placeholder, optionally surrounded by a
-literal prefix or suffix such as `--password={password}`; substitution changes
-that element's contents but can never create another argument. Each placeholder
-name occurs exactly once in a capsule. Placeholders are forbidden in `program`.
-Supplied names may not be `help`, `json`, `manifest`, or `version`, which are
-reserved CLI options. The validator rejects unmatched braces, multiple
-placeholders in one argument, undeclared supplied names, missing local names,
-empty local values, legacy `command` declarations, and shell or language
-interpreter programs.
-
-The child receives no shell, stdin, or TTY. Its cwd is the manifest directory
-joined with the capsule's optional normalized `cwd`, defaulting to the manifest
-directory. Its combined stdout/stderr is bounded and scrubbed
-before return. Every result, successful or not, exposes the literal `program`
-and `args` from the manifest and never resolved arguments. In Markdown mode,
-the declared argv is printed before the scrubbed process output. In JSON mode,
-successful `data` contains `program`, `args`, `stdout`, `stderr`, and the child
-`exit_code`. When the parent exits 7 because the child failed,
-timed out, or exceeded the output limit, `error.details` contains one object
-with the same four diagnostic fields when available. `stdout` and `stderr`
-always contain scrubbed text only.
+Migration never writes a file. It emits a draft v2 manifest and a review
+report. It flags every role-to-operation mapping, non-native ticket routing,
+time-log fallback, mirrored repository mapping, global workflow split, and
+free-text rule. The draft grants only read operations by default and never
+copies a secret value; a human must review and write the result explicitly.
