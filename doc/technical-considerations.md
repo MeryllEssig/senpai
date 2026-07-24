@@ -17,6 +17,17 @@ are allowed; the lowest priority wins, while a tie requires an explicit
 integration. Forge selection additionally requires the integration to
 be mapped on the selected repository.
 
+## Repository galaxies
+
+A project may declare a galaxy of repositories in `repos`. Each repository has
+a project-relative `path`, optional `labels`, direct `depends_on` repository
+ids, and an `integrations` map from declared forge integrations to their
+platform repository paths. The dependency declarations keep multi-repository
+relationships available to the agent, while the integration map permits the
+same repository to be mirrored on several forges and routes each code operation
+only to a mapped integration. Validation rejects a dependency that names an
+unknown repository.
+
 An omitted local `read` policy is `allow`; all other omitted capabilities are
 `deny`. This is evaluated again for each workflow-initiated call. Auth is
 secret-safe metadata only: adapters receive environment-variable names and
