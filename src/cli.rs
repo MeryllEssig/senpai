@@ -123,24 +123,401 @@ fn role_select(
 }
 fn summary(l: &Loaded) -> Value {
     let v = &l.value;
-    let trackers = objects(v, "trackers")
-        .and_then(|x| x.get("sources"))
-        .and_then(Value::as_object)
-        .map(|x| {
-            x.iter()
-                .map(|(id, s)| json!({"id":id,"roles":s.get("roles")}))
-                .collect::<Vec<_>>()
-        });
-    let hosting = objects(v, "code_hosting")
-        .and_then(|x| x.get("instances"))
-        .and_then(Value::as_object)
-        .map(|x| {
-            x.iter()
-                .map(|(id, s)| json!({"id":id,"roles":s.get("roles")}))
-                .collect::<Vec<_>>()
-        });
+    let integrations = objects(v, "integrations").map(|x| x.iter().map(|(id, integration)| {
+        json!({"id":id,"kind":integration["kind"],"platform":integration["platform"],"handles":integration["handles"]})
+    }).collect::<Vec<_>>());
     let capsules=objects(v,"capsules").map(|x|x.iter().map(|(id,c)|json!({"id":id,"type":c.get("type"),"repo":c.get("repo"),"environment":c.get("environment")})).collect::<Vec<_>>());
-    json!({"manifest_path":l.path,"project":v["project"]["name"],"sections":v.as_object().unwrap().keys().filter(|x|*x!="$schema"&&*x!="version"&&*x!="project").collect::<Vec<_>>(),"trackers":trackers,"hosting":hosting,"repos":objects(v,"repos").map(|x|x.keys().collect::<Vec<_>>()),"environments":objects(v,"environments").map(|x|x.keys().collect::<Vec<_>>()),"capsules":capsules,"workflows":{"tickets":workflow(v,"tickets"),"code_changes":workflow(v,"code_changes")}})
+    json!({"manifest_path":l.path,"project":v["project"]["name"],"sections":v.as_object().unwrap().keys().filter(|x|*x!="$schema"&&*x!="version"&&*x!="project").collect::<Vec<_>>(),"integrations":integrations,"repos":objects(v,"repos").map(|x|x.keys().collect::<Vec<_>>()),"environments":objects(v,"environments").map(|x|x.keys().collect::<Vec<_>>()),"capsules":capsules})
+}
+
+fn operation_kind(operation: &str) -> Option<&'static str> {
+    if operation.starts_with("ticket.") {
+        Some("ticketing")
+    } else if operation.starts_with("code.") {
+        Some("forge")
+    } else {
+        None
+    }
+}
+fn expanded_policy(integration: &Value, operation: &str) -> Value {
+    let capabilities: &[&str] = if integration["kind"] == "ticketing" {
+        &[
+            "read",
+            "create",
+            "update",
+            "comment",
+            "transition",
+            "link",
+            "log_time",
+        ]
+    } else {
+        &[
+            "read",
+            "create",
+            "update",
+            "comment",
+            "request_review",
+            "merge",
+            "pipeline_read",
+            "pipeline_trigger",
+        ]
+    };
+    let policy = integration
+        .get("workflow")
+        .and_then(|workflow| workflow.get("policy"));
+    let mut effective = Map::new();
+    for capability in capabilities {
+        effective.insert(
+            (*capability).into(),
+            policy
+                .and_then(|policy| policy.get(*capability))
+                .cloned()
+                .unwrap_or_else(|| {
+                    Value::String(
+                        if *capability == "read" {
+                            "allow"
+                        } else {
+                            "deny"
+                        }
+                        .into(),
+                    )
+                }),
+        );
+    }
+    let capability = operation
+        .split_once('.')
+        .map(|(_, value)| value)
+        .unwrap_or(operation);
+    json!({"effective": effective, "decision": effective[capability]})
+}
+fn effective_workflow(integration: &Value) -> Value {
+    integration
+        .get("workflow")
+        .and_then(|workflow| workflow.get("skill"))
+        .cloned()
+        .unwrap_or_else(|| {
+            Value::String(
+                if integration["kind"] == "ticketing" {
+                    "senpai-project-use-ticket-workflow"
+                } else {
+                    "senpai-project-use-code-hosting-workflow"
+                }
+                .into(),
+            )
+        })
+}
+fn effective_adapter(v: &Value, integration: &Value) -> Value {
+    if let Some(adapter) = integration.get("adapter") {
+        return adapter.clone();
+    }
+    let kind = integration["kind"].as_str().unwrap();
+    let platform = integration["platform"].as_str().unwrap();
+    if let Some(adapter) = v
+        .get("adapter_overrides")
+        .and_then(|overrides| overrides.get(kind))
+        .and_then(|platforms| platforms.get(platform))
+    {
+        return adapter.clone();
+    }
+    json!({"kind":"shipped", "skill": if kind == "ticketing" { "senpai-project-management" } else { "senpai-code-hosting" }, "platform":platform})
+}
+fn choose_route<'a>(
+    mut candidates: Vec<(&'a String, &'a Value)>,
+    explicit: Option<&str>,
+    label: &str,
+) -> Result<(&'a String, &'a Value), SenpaiError> {
+    if candidates.is_empty() {
+        return Err(SenpaiError::new(
+            3,
+            "capability_not_declared",
+            format!("No integration can handle this {label} operation."),
+        ));
+    }
+    if let Some(id) = explicit {
+        let selected = candidates
+            .iter()
+            .find(|(candidate, _)| candidate.as_str() == id)
+            .copied()
+            .ok_or_else(|| {
+                SenpaiError::new(
+                    3,
+                    "capability_not_declared",
+                    format!("Integration {id} cannot handle this {label} operation."),
+                )
+            })?;
+        return Ok(selected);
+    }
+    if candidates.len() == 1 {
+        return Ok(candidates.remove(0));
+    }
+    candidates.sort_by_key(|(_, integration)| {
+        integration
+            .get("routing")
+            .and_then(|routing| routing.get("priority"))
+            .and_then(Value::as_i64)
+            .unwrap_or(i64::MAX)
+    });
+    if candidates.len() > 1 {
+        let first = candidates[0]
+            .1
+            .get("routing")
+            .and_then(|routing| routing.get("priority"))
+            .and_then(Value::as_i64)
+            .unwrap_or(i64::MAX);
+        let second = candidates[1]
+            .1
+            .get("routing")
+            .and_then(|routing| routing.get("priority"))
+            .and_then(Value::as_i64)
+            .unwrap_or(i64::MAX);
+        if first == second {
+            let mut error = SenpaiError::new(
+                5,
+                "ambiguous_route",
+                format!("More than one integration can handle this {label} operation."),
+            );
+            error.details = candidates.iter().map(|(id, _)| json!({"id":id})).collect();
+            return Err(error);
+        }
+    }
+    Ok(candidates.remove(0))
+}
+fn resolve_operation(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
+    let operation = args.get(2).map(String::as_str).ok_or_else(|| {
+        SenpaiError::new(
+            2,
+            "invalid_arguments",
+            "resolve operation requires an operation.",
+        )
+    })?;
+    let kind = operation_kind(operation).ok_or_else(|| {
+        SenpaiError::new(
+            2,
+            "invalid_arguments",
+            "Operation must start with ticket. or code.",
+        )
+    })?;
+    let ticket = get_flag(args, "--ticket");
+    let repo = get_flag(args, "--repo");
+    if (kind == "ticketing" && (ticket.is_none() || repo.is_some()))
+        || (kind == "forge" && (repo.is_none() || ticket.is_some()))
+    {
+        return Err(SenpaiError::new(
+            2,
+            "invalid_arguments",
+            "Ticket operations require exactly --ticket; code operations require exactly --repo.",
+        ));
+    }
+    let integrations = objects(&l.value, "integrations").unwrap();
+    let mut candidates: Vec<_> = integrations
+        .iter()
+        .filter(|(_, integration)| {
+            integration["kind"] == kind
+                && integration
+                    .get("handles")
+                    .and_then(Value::as_array)
+                    .is_some_and(|handles| {
+                        handles
+                            .iter()
+                            .any(|handled| handled.as_str() == Some(operation))
+                    })
+        })
+        .collect();
+    let route = if let Some(ticket_id) = ticket.as_deref() {
+        let pattern_matches: Vec<_> = candidates
+            .iter()
+            .copied()
+            .filter(|(_, integration)| {
+                integration
+                    .get("routing")
+                    .and_then(|routing| routing.get("ticket_id_patterns"))
+                    .and_then(Value::as_array)
+                    .is_some_and(|patterns| {
+                        patterns.iter().filter_map(Value::as_str).any(|pattern| {
+                            regex::Regex::new(pattern).is_ok_and(|regex| regex.is_match(ticket_id))
+                        })
+                    })
+            })
+            .collect();
+        if !pattern_matches.is_empty() {
+            candidates = pattern_matches;
+        }
+        json!({"ticket":ticket_id, "normalized_ticket":ticket_id})
+    } else {
+        let repo_id = repo.as_deref().unwrap();
+        let repository = objects(&l.value, "repos")
+            .and_then(|repos| repos.get(repo_id))
+            .ok_or_else(|| SenpaiError::new(3, "not_found", format!("Unknown repo {repo_id}.")))?;
+        candidates.retain(|(id, _)| {
+            repository
+                .get("integrations")
+                .and_then(Value::as_object)
+                .is_some_and(|mapped| mapped.contains_key(*id))
+        });
+        json!({"repo":repo_id})
+    };
+    let (id, integration) =
+        choose_route(candidates, get_flag(args, "--integration").as_deref(), kind)?;
+    let route = if kind == "forge" {
+        let repo_id = repo.unwrap();
+        let path = l.value["repos"][&repo_id]["integrations"][id].clone();
+        json!({"repo":repo_id, "repository":path})
+    } else {
+        route
+    };
+    Ok(
+        json!({"integration":{"id":id,"kind":integration["kind"],"platform":integration["platform"],"url":integration["url"],"scope":integration.get("scope"),"auth":integration.get("auth")},"route":route,"operation":operation,"policy":expanded_policy(integration, operation),"workflow":{"skill":effective_workflow(integration)},"adapter":effective_adapter(&l.value, integration)}),
+    )
+}
+fn migrate_v1(args: &[String]) -> Result<Value, SenpaiError> {
+    let path = manifest_arg(args)?.ok_or_else(|| {
+        SenpaiError::new(
+            2,
+            "invalid_arguments",
+            "migrate v1 requires --manifest <absolute-path>.",
+        )
+    })?;
+    let input = parse_jsonc(&PathBuf::from(path), 4, "invalid_manifest")?;
+    if input["version"] != 1 {
+        return Err(SenpaiError::new(
+            4,
+            "invalid_manifest",
+            "migrate v1 accepts only a version 1 manifest.",
+        ));
+    }
+    fn safe_auth(auth: Option<&Value>) -> Result<Option<Value>, SenpaiError> {
+        let Some(auth) = auth else { return Ok(None) };
+        let object = auth
+            .as_object()
+            .ok_or_else(|| SenpaiError::new(4, "invalid_manifest", "v1 auth must be an object."))?;
+        if !object
+            .get("mode")
+            .and_then(Value::as_str)
+            .is_some_and(|mode| matches!(mode, "preconfigured" | "env" | "interactive"))
+            || object.iter().any(|(key, value)| {
+                key != "mode"
+                    && (!key.ends_with("_env")
+                        || !value.as_str().is_some_and(|name| {
+                            regex::Regex::new("^[A-Za-z_][A-Za-z0-9_]*$")
+                                .unwrap()
+                                .is_match(name)
+                        }))
+            })
+        {
+            return Err(SenpaiError::new(
+                4,
+                "invalid_manifest",
+                "v1 auth contains an unsafe or invalid field.",
+            ));
+        }
+        Ok(Some(auth.clone()))
+    }
+    let mut integrations = Map::new();
+    let mut report = Vec::new();
+    let ticket_workflow = input
+        .get("workflows")
+        .and_then(|workflows| workflows.get("tickets"))
+        .cloned();
+    let code_workflow = input
+        .get("workflows")
+        .and_then(|workflows| workflows.get("code_changes"))
+        .cloned();
+    for (id, source) in objects(&input, "trackers")
+        .and_then(|trackers| trackers.get("sources"))
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        let mut integration = Map::new();
+        integration.insert("kind".into(), Value::String("ticketing".into()));
+        integration.insert("platform".into(), source["type"].clone());
+        integration.insert("url".into(), source["url"].clone());
+        integration.insert("scope".into(), json!({"project":source["project"]}));
+        integration.insert("provides".into(), json!(["ticket.read"]));
+        integration.insert("handles".into(), json!(["ticket.read"]));
+        if let Some(auth) = safe_auth(source.get("auth"))? {
+            integration.insert("auth".into(), auth);
+        }
+        if source.get("ticket_id_patterns").is_some() || source.get("priority").is_some() {
+            let mut routing = Map::new();
+            if let Some(patterns) = source.get("ticket_id_patterns") {
+                routing.insert("ticket_id_patterns".into(), patterns.clone());
+            }
+            if let Some(priority) = source.get("priority") {
+                routing.insert("priority".into(), priority.clone());
+            }
+            integration.insert("routing".into(), Value::Object(routing));
+            report.push(json!({"code":"review_ticket_routing","integration":id,"message":"Review non-native ticket patterns and routing priority."}));
+        }
+        if let Some(workflow) = &ticket_workflow {
+            integration.insert("workflow".into(), workflow.clone());
+        }
+        if let Some(skill) = source.get("skill") {
+            integration.insert("adapter".into(), json!({"skill":skill}));
+            report.push(json!({"code":"review_adapter","integration":id,"message":"Review the migrated technical adapter override."}));
+        }
+        integrations.insert(id.clone(), Value::Object(integration));
+        report.push(json!({"code":"review_role_mapping","integration":id,"message":"Map v1 roles to v2 operations; the draft grants read only."}));
+        if source.get("time_logging").is_some() {
+            report.push(json!({"code":"review_time_logging_fallback","integration":id,"message":"Review the v1 time-log fallback manually."}));
+        }
+    }
+    for (id, instance) in objects(&input, "code_hosting")
+        .and_then(|hosting| hosting.get("instances"))
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        let mut integration = Map::new();
+        integration.insert("kind".into(), Value::String("forge".into()));
+        integration.insert("platform".into(), instance["platform"].clone());
+        integration.insert("url".into(), instance["url"].clone());
+        integration.insert("provides".into(), json!(["code.read"]));
+        integration.insert("handles".into(), json!(["code.read"]));
+        if let Some(auth) = safe_auth(instance.get("auth"))? {
+            integration.insert("auth".into(), auth);
+        }
+        if let Some(workflow) = &code_workflow {
+            integration.insert("workflow".into(), workflow.clone());
+        }
+        if let Some(skill) = instance.get("skill") {
+            integration.insert("adapter".into(), json!({"skill":skill}));
+            report.push(json!({"code":"review_adapter","integration":id,"message":"Review the migrated technical adapter override."}));
+        }
+        integrations.insert(id.clone(), Value::Object(integration));
+        report.push(json!({"code":"review_role_mapping","integration":id,"message":"Map v1 roles to v2 operations; the draft grants read only."}));
+    }
+    let mut draft = input.as_object().cloned().unwrap();
+    draft.insert("version".into(), Value::from(2));
+    draft.insert(
+        "$schema".into(),
+        Value::String("https://senpai.dev/schema/v2/senpai.schema.json".into()),
+    );
+    draft.remove("trackers");
+    draft.remove("code_hosting");
+    if draft.remove("workflows").is_some() {
+        report.push(json!({"code":"review_workflows","message":"Split each v1 global workflow across integrations."}));
+    }
+    if let Some(rules) = draft
+        .remove("rules")
+        .and_then(|rules| rules.as_array().cloned())
+    {
+        for (index, _) in rules.iter().enumerate() {
+            report.push(json!({"code":"review_rule","index":index,"message":"Move this free-text rule into a workflow or structured configuration."}));
+        }
+    }
+    if let Some(repos) = draft.get_mut("repos").and_then(Value::as_object_mut) {
+        for repo in repos.values_mut() {
+            if let Some(map) = repo.as_object_mut().and_then(|repo| repo.remove("hosting")) {
+                repo.as_object_mut()
+                    .unwrap()
+                    .insert("integrations".into(), map);
+                report.push(json!({"code":"review_mirrored_repositories","message":"Review every migrated repository integration mapping."}));
+            }
+        }
+    }
+    draft.insert("integrations".into(), Value::Object(integrations));
+    Ok(json!({"draft":draft,"report":report,"written":false}))
 }
 fn workflow(v: &Value, domain: &str) -> Value {
     let caps = if domain == "tickets" {
@@ -197,6 +574,16 @@ fn get_command(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
         .get(1)
         .map(String::as_str)
         .ok_or_else(|| SenpaiError::new(2, "invalid_arguments", "get requires a topic."))?;
+    if matches!(
+        topic,
+        "tracker" | "ticket-route" | "hosting" | "workflow" | "rules"
+    ) {
+        return Err(SenpaiError::new(
+            2,
+            "invalid_arguments",
+            format!("get {topic} was removed in manifest v2; use resolve operation."),
+        ));
+    }
     match topic {
         "tracker" => {
             let role = get_flag(args, "--role")
@@ -867,6 +1254,18 @@ pub fn run(args: Vec<String>) -> i32 {
         }
         if args[0] == "--version" || args[0] == "version" {
             return Ok(json!({"version":env!("CARGO_PKG_VERSION")}));
+        }
+        if args.first().is_some_and(|command| command == "migrate")
+            && args.get(1).is_some_and(|version| version == "v1")
+        {
+            return migrate_v1(&args);
+        }
+        if args.first().is_some_and(|command| command == "resolve")
+            && args.get(1).is_some_and(|command| command == "operation")
+        {
+            let manifest = manifest_arg(&args)?;
+            let l = load(manifest)?;
+            return resolve_operation(&l, &args);
         }
         if args[0] == "resolve" {
             let from = get_flag(&args, "--from")

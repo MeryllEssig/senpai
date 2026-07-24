@@ -12,14 +12,14 @@ trap 'result_code=$?; if [[ -n $child_pid ]]; then kill "$child_pid" 2>/dev/null
 cat > "$workspace/.senpai.jsonc" <<'EOF'
 {
   // JSONC is accepted.
-  "version": 1,
+  "version": 2,
   "project": { "name": "demo", "label": "Demo", "context": "Local test project", "stack": [] },
-  "trackers": { "sources": {
-    "tickets": { "type": "redmine", "url": "https://tracker.example", "project": "demo", "roles": ["ticket_details"], "ticket_id_patterns": ["^#[0-9]+$"] },
-    "backup": { "type": "redmine", "url": "https://backup-tracker.example", "project": "demo", "roles": ["ticket_details"] }
-  } },
-  "code_hosting": { "instances": { "origin": { "platform": "gitlab", "url": "https://git.example", "roles": ["merge_requests"] } } },
-  "repos": { "root": { "path": ".", "hosting": { "origin": "demo/root" } }, "app": { "path": "app", "depends_on": ["root"], "hosting": { "origin": "demo/app" } } },
+  "integrations": {
+    "tickets": { "kind": "ticketing", "platform": "redmine", "url": "https://tracker.example", "scope": { "project_identifier": "demo" }, "provides": ["ticket.read", "ticket.comment"], "handles": ["ticket.read", "ticket.comment"], "routing": { "ticket_id_patterns": ["^#[0-9]+$"], "priority": 10 }, "workflow": { "skill": "ticket-flow", "policy": { "read": "allow", "comment": "confirm" } } },
+    "backup": { "kind": "ticketing", "platform": "redmine", "url": "https://backup-tracker.example", "provides": ["ticket.read"], "handles": ["ticket.read"], "routing": { "ticket_id_patterns": ["^#[0-9]+$"], "priority": 20 } },
+    "origin": { "kind": "forge", "platform": "gitlab", "url": "https://git.example", "provides": ["code.read", "code.create"], "handles": ["code.read", "code.create"], "workflow": { "policy": { "read": "allow", "create": "confirm" } } }
+  },
+  "repos": { "root": { "path": ".", "integrations": { "origin": "demo/root" } }, "app": { "path": "app", "depends_on": ["root"], "integrations": { "origin": "demo/app" } } },
   "environments": { "local": { "label": "Local", "repo": "app" } },
   "capsules": {
     "echo": { "label": "Echo", "type": "test", "program": "printf", "args": ["%s", "{message}"], "supplied": ["message"], "repo": "app", "environment": "local" },
@@ -32,12 +32,12 @@ EOF
 mkdir -p "$workspace/app"
 result=$(cd "$workspace/app" && "$binary" summary --json)
 printf '%s' "$result" | grep -q '"ok":true'
-"$binary" get hosting --role merge_requests --repo app --manifest "$workspace/.senpai.jsonc" --json | grep -q 'demo/app'
+"$binary" resolve operation code.create --repo app --manifest "$workspace/.senpai.jsonc" --json | grep -q 'demo/app'
+"$binary" resolve operation ticket.comment --ticket '#12' --manifest "$workspace/.senpai.jsonc" --json | grep -q '"decision":"confirm"'
 "$binary" get repo --path "$workspace/app/subdir" --with-dependencies --manifest "$workspace/.senpai.jsonc" --json | grep -q '"id":"app"'
-if ambiguous=$("$binary" get tracker --role ticket_details --manifest "$workspace/.senpai.jsonc" --json 2>&1); then
-  echo 'ambiguous tracker unexpectedly resolved' >&2; exit 1
+if "$binary" get tracker --manifest "$workspace/.senpai.jsonc" --json >/dev/null; then
+  echo 'obsolete command unexpectedly passed' >&2; exit 1
 fi
-printf '%s' "$ambiguous" | grep -q 'ambiguous'
 echo_result=$("$binary" run echo --message hello --manifest "$workspace/.senpai.jsonc" --json)
 printf '%s' "$echo_result" | grep -q 'hello'
 "$binary" init --manifest "$workspace/.senpai.jsonc" --json | grep -q 'private'
@@ -66,6 +66,20 @@ sed 's/"program": "yes", "args": \[\]/"command": "yes"/' "$workspace/.senpai.jso
 if "$binary" validate manifest --manifest "$legacy_manifest" --json >/dev/null; then
   echo 'legacy command capsule unexpectedly validated' >&2; exit 1
 fi
+v1_manifest="$workspace/v1.jsonc"
+sed 's/"version": 2/"version": 1/' "$workspace/.senpai.jsonc" > "$v1_manifest"
+if "$binary" validate manifest --manifest "$v1_manifest" --json >/dev/null; then
+  echo 'v1 manifest unexpectedly validated' >&2; exit 1
+fi
+migration_source="$workspace/migration-v1.jsonc"
+cat > "$migration_source" <<'EOF'
+{"version":1,"project":{"name":"legacy","label":"Legacy","context":"","stack":[]},"trackers":{"sources":{"redmine":{"type":"redmine","url":"https://legacy.example","project":"legacy","roles":["ticket_details"],"skill":"legacy-ticket-adapter"}}},"code_hosting":{"instances":{"git":{"platform":"gitlab","url":"https://git.legacy.example","roles":["merge_requests"]}}},"workflows":{"tickets":{"skill":"legacy-ticket-flow","policy":{"comment":"confirm"}}},"rules":[{"if":"a","then":"b"},{"if":"c","then":"d"}],"repos":{"app":{"path":".","hosting":{"git":"legacy/app"}}}}
+EOF
+migration_result=$("$binary" migrate v1 --manifest "$migration_source" --json)
+printf '%s' "$migration_result" | grep -q '"written":false'
+printf '%s' "$migration_result" | grep -q 'legacy-ticket-flow'
+printf '%s' "$migration_result" | grep -q 'legacy-ticket-adapter'
+[[ $(printf '%s' "$migration_result" | grep -o '"code":"review_rule"' | wc -l) -eq 2 ]]
 cat > "$workspace/child-spawner.rs" <<'EOF'
 use std::{io::{self, Write}, process::Command, thread, time::Duration};
 

@@ -84,12 +84,12 @@ function templatePlaceholders(capsule, id) {
 }
 
 function assertReference(manifest) {
-  assert(manifest.version === 1, "reference manifest must be version 1");
-  assert(manifest.$schema === "https://senpai.dev/schema/v1/senpai.schema.json", "reference manifest must declare the v1 schema URI");
+  assert(manifest.version === 2, "reference manifest must be version 2");
+  assert(manifest.$schema === "https://senpai.dev/schema/v2/senpai.schema.json", "reference manifest must declare the v2 schema URI");
 
   const repoIds = new Set(Object.keys(manifest.repos ?? {}));
   const environmentIds = new Set(Object.keys(manifest.environments ?? {}));
-  const hostingIds = new Set(Object.keys(manifest.code_hosting?.instances ?? {}));
+  const integrations = manifest.integrations ?? {};
   const repos = manifest.repos ?? {};
   const repoPaths = new Set();
 
@@ -98,9 +98,15 @@ function assertReference(manifest) {
     assert(!repoPaths.has(repo.path), `repo ${id} duplicates path ${repo.path}`);
     repoPaths.add(repo.path);
     for (const dependency of repo.depends_on ?? []) assert(repoIds.has(dependency), `repo ${id} depends on unknown repo ${dependency}`);
-    for (const hostingId of Object.keys(repo.hosting ?? {})) assert(hostingIds.has(hostingId), `repo ${id} names unknown hosting instance ${hostingId}`);
+    for (const integrationId of Object.keys(repo.integrations ?? {})) assert(integrations[integrationId]?.kind === "forge", `repo ${id} names unknown forge integration ${integrationId}`);
   }
   assertAcyclic(repos, "repo");
+
+  for (const [id, integration] of Object.entries(integrations)) {
+    const prefix = integration.kind === "ticketing" ? "ticket." : "code.";
+    for (const operation of integration.provides ?? []) assert(operation.startsWith(prefix), `integration ${id} provides an operation incompatible with its kind`);
+    for (const operation of integration.handles ?? []) assert(integration.provides?.includes(operation), `integration ${id} handles an unavailable operation`);
+  }
 
   for (const [id, environment] of Object.entries(manifest.environments ?? {})) {
     if (environment.repo) assert(repoIds.has(environment.repo), `environment ${id} names unknown repo ${environment.repo}`);

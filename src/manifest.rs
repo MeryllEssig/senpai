@@ -203,17 +203,17 @@ pub fn validate(v: &Value) -> Result<(), SenpaiError> {
         return Err(SenpaiError::new(
             4,
             "invalid_manifest",
-            format!("Manifest does not match the v1 schema: {error}"),
+            format!("Manifest does not match the v2 schema: {error}"),
         ));
     }
     let root = v.as_object().ok_or_else(|| {
         SenpaiError::new(4, "invalid_manifest", "Manifest root must be an object.")
     })?;
-    if root.get("version") != Some(&Value::from(1)) {
+    if root.get("version") != Some(&Value::from(2)) {
         return Err(SenpaiError::new(
             4,
             "invalid_manifest",
-            "Only manifest version 1 is supported.",
+            "Only manifest version 2 is supported.",
         ));
     }
     let project = object(v, "project")
@@ -229,9 +229,9 @@ pub fn validate(v: &Value) -> Result<(), SenpaiError> {
     }
     let repos = ids(v, "repos");
     let envs = ids(v, "environments");
-    let hosting = object(v, "code_hosting")
-        .and_then(|x| x.get("instances"))
-        .and_then(Value::as_object);
+    let integrations = object(v, "integrations")
+        .ok_or_else(|| SenpaiError::new(4, "invalid_manifest", "integrations is required."))?;
+    validate_integrations(v, integrations)?;
     if let Some(rs) = object(v, "repos") {
         for (id, r) in rs {
             let o = r.as_object().ok_or_else(|| {
@@ -270,13 +270,18 @@ pub fn validate(v: &Value) -> Result<(), SenpaiError> {
                     ));
                 }
             }
-            if let Some(h) = o.get("hosting").and_then(Value::as_object) {
+            if let Some(h) = o.get("integrations").and_then(Value::as_object) {
                 for inst in h.keys() {
-                    if !hosting.map(|x| x.contains_key(inst)).unwrap_or(false) {
+                    if !integrations
+                        .get(inst)
+                        .is_some_and(|integration| integration["kind"] == "forge")
+                    {
                         return Err(SenpaiError::new(
                             4,
                             "invalid_manifest",
-                            format!("repos.{id} references unknown hosting instance {inst}."),
+                            format!(
+                                "repos.{id} references unknown code-platform integration {inst}."
+                            ),
                         ));
                     }
                 }
@@ -312,6 +317,135 @@ pub fn validate(v: &Value) -> Result<(), SenpaiError> {
                     format!("docs.{id} references unknown repo {r}."),
                 ));
             }
+        }
+    }
+    Ok(())
+}
+const TICKET_OPERATIONS: &[&str] = &[
+    "ticket.read",
+    "ticket.create",
+    "ticket.update",
+    "ticket.comment",
+    "ticket.transition",
+    "ticket.link",
+    "ticket.log_time",
+];
+const CODE_OPERATIONS: &[&str] = &[
+    "code.read",
+    "code.create",
+    "code.update",
+    "code.comment",
+    "code.request_review",
+    "code.merge",
+    "code.pipeline_read",
+    "code.pipeline_trigger",
+];
+const TICKET_POLICY: &[&str] = &[
+    "read",
+    "create",
+    "update",
+    "comment",
+    "transition",
+    "link",
+    "log_time",
+];
+const CODE_POLICY: &[&str] = &[
+    "read",
+    "create",
+    "update",
+    "comment",
+    "request_review",
+    "merge",
+    "pipeline_read",
+    "pipeline_trigger",
+];
+
+fn validate_integrations(
+    root: &Value,
+    integrations: &Map<String, Value>,
+) -> Result<(), SenpaiError> {
+    for (id, integration) in integrations {
+        let kind = integration["kind"].as_str().unwrap_or_default();
+        let (operations, policies) = if kind == "ticketing" {
+            (TICKET_OPERATIONS, TICKET_POLICY)
+        } else {
+            (CODE_OPERATIONS, CODE_POLICY)
+        };
+        let provides = integration["provides"].as_array().unwrap();
+        for operation in provides.iter().filter_map(Value::as_str) {
+            if !operations.contains(&operation) {
+                return Err(SenpaiError::new(
+                    4,
+                    "invalid_manifest",
+                    format!(
+                        "integrations.{id}.provides contains unsupported operation {operation}."
+                    ),
+                ));
+            }
+        }
+        for operation in integration["handles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+        {
+            if !operations.contains(&operation)
+                || !provides
+                    .iter()
+                    .any(|provided| provided.as_str() == Some(operation))
+            {
+                return Err(SenpaiError::new(
+                    4,
+                    "invalid_manifest",
+                    format!(
+                        "integrations.{id}.handles operation {operation} is not provided by its adapter."
+                    ),
+                ));
+            }
+        }
+        if let Some(policy) = integration
+            .get("workflow")
+            .and_then(|workflow| workflow.get("policy"))
+            .and_then(Value::as_object)
+        {
+            for capability in policy.keys() {
+                if !policies.contains(&capability.as_str()) {
+                    return Err(SenpaiError::new(
+                        4,
+                        "invalid_manifest",
+                        format!(
+                            "integrations.{id}.workflow.policy contains unsupported capability {capability}."
+                        ),
+                    ));
+                }
+            }
+        }
+        if kind != "ticketing" && integration.get("routing").is_some() {
+            return Err(SenpaiError::new(
+                4,
+                "invalid_manifest",
+                format!("integrations.{id}.routing is only valid for ticketing integrations."),
+            ));
+        }
+        let has_override = integration.get("adapter").is_some()
+            || root
+                .get("adapter_overrides")
+                .and_then(|overrides| overrides.get(kind))
+                .and_then(|platforms| platforms.get(integration["platform"].as_str()?))
+                .is_some();
+        let shipped = matches!(
+            (kind, integration["platform"].as_str()),
+            ("ticketing", Some("jira" | "redmine")) | ("forge", Some("github" | "gitlab"))
+        );
+        if !shipped && !has_override {
+            return Err(SenpaiError::new(
+                4,
+                "invalid_manifest",
+                format!(
+                    "integrations.{id} has no shipped adapter for {kind}/{}; declare an adapter override.",
+                    integration["platform"]
+                ),
+            ));
         }
     }
     Ok(())
@@ -600,8 +734,9 @@ mod tests {
 
     fn manifest(program: &str, args: Value) -> Value {
         json!({
-            "version": 1,
+            "version": 2,
             "project": {"name": "demo", "label": "Demo", "context": "Test", "stack": []},
+            "integrations": {"origin": {"kind": "forge", "platform": "gitlab", "url": "https://git.example", "provides": ["code.read"], "handles": ["code.read"]}},
             "repos": {"app": {"path": "."}},
             "environments": {"local": {"label": "Local", "repo": "app"}},
             "capsules": {
