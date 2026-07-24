@@ -1,12 +1,12 @@
 # SenpAI CLI contract — manifest v2
 
-All manifest reads accept `--manifest <absolute-path>` and never contact a remote service. JSON output is `{ "ok": true, "data": …, "warnings": [] }`; errors are `{ "ok": false, "error": { "code": "…", "message": "…", "details": [] } }`. No result, error, or adapter handoff contains a secret value.
+All manifest reads discover `.senpai.jsonc` by walking upward from the current directory and never contact a remote service. The `--manifest` option is not supported. JSON output is `{ "ok": true, "data": …, "warnings": [] }`; errors are `{ "ok": false, "error": { "code": "…", "message": "…", "details": [] } }`. No result, error, or adapter handoff contains a secret value.
 
 ## Integration resolution
 
 ```text
 senpai resolve operation <operation> [--ticket <id> | --repo <repo-id>]
-  [--integration <id>] [--manifest <path>] [--json]
+  [--integration <id>] [--json]
 ```
 
 The only operations in v2 are:
@@ -27,7 +27,7 @@ The result includes the integration's public coordinates and auth metadata, the 
 ## Migration
 
 ```text
-senpai migrate v1 --manifest <absolute-v1-manifest> [--json]
+senpai migrate v1 [--json]
 ```
 
 Migration never writes a file. It emits a draft v2 manifest and a review report. It flags every role-to-operation mapping, non-native ticket routing, time-log fallback, mirrored repository mapping, global workflow split, and free-text rule. The draft grants only read operations by default and never copies a secret value; a human must review and write the result explicitly.

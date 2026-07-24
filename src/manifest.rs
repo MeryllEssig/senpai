@@ -146,28 +146,8 @@ pub struct Loaded {
     pub dir: PathBuf,
     pub value: Value,
 }
-pub fn load(manifest: Option<&str>) -> Result<Loaded, SenpaiError> {
-    let path = match manifest {
-        Some(s) => {
-            let p = PathBuf::from(s);
-            if !p.is_absolute() {
-                return Err(SenpaiError::new(
-                    2,
-                    "invalid_arguments",
-                    "--manifest must be an absolute path.",
-                ));
-            }
-            if !p.is_file() {
-                return Err(SenpaiError::new(
-                    3,
-                    "manifest_not_found",
-                    format!("Manifest not found: {s}"),
-                ));
-            }
-            fs::canonicalize(p).unwrap()
-        }
-        None => find_manifest(&std::env::current_dir().unwrap())?,
-    };
+pub fn load() -> Result<Loaded, SenpaiError> {
+    let path = find_manifest(&std::env::current_dir().unwrap())?;
     let dir = path.parent().unwrap().to_path_buf();
     let mut value = parse_jsonc(&path, 4, "invalid_manifest")?;
     let overlay = dir.join(".senpai.local.jsonc");

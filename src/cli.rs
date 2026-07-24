@@ -59,13 +59,15 @@ fn get_flag(args: &[String], name: &str) -> Option<String> {
 fn has(args: &[String], s: &str) -> bool {
     args.iter().any(|x| x == s)
 }
-fn manifest_arg(args: &[String]) -> Result<Option<&str>, SenpaiError> {
-    if let Some(i) = args.iter().position(|x| x == "--manifest") {
-        return args.get(i + 1).map(|x| Some(x.as_str())).ok_or_else(|| {
-            SenpaiError::new(2, "invalid_arguments", "--manifest needs an absolute path.")
-        });
+fn reject_removed_manifest_flag(args: &[String]) -> Result<(), SenpaiError> {
+    if has(args, "--manifest") {
+        return Err(SenpaiError::new(
+            2,
+            "invalid_arguments",
+            "--manifest was removed; SenpAI discovers .senpai.jsonc from the current directory.",
+        ));
     }
-    Ok(None)
+    Ok(())
 }
 fn map_with_id(id: &str, v: &Value, section: &str) -> Value {
     let mut o = v.as_object().cloned().unwrap_or_default();
@@ -374,15 +376,9 @@ fn resolve_operation(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> 
         json!({"integration":{"id":id,"kind":integration["kind"],"platform":integration["platform"],"url":integration["url"],"scope":integration.get("scope"),"auth":integration.get("auth")},"route":route,"operation":operation,"policy":expanded_policy(integration, operation),"workflow":{"skill":effective_workflow(integration)},"adapter":effective_adapter(&l.value, integration)}),
     )
 }
-fn migrate_v1(args: &[String]) -> Result<Value, SenpaiError> {
-    let path = manifest_arg(args)?.ok_or_else(|| {
-        SenpaiError::new(
-            2,
-            "invalid_arguments",
-            "migrate v1 requires --manifest <absolute-path>.",
-        )
-    })?;
-    let input = parse_jsonc(&PathBuf::from(path), 4, "invalid_manifest")?;
+fn migrate_v1() -> Result<Value, SenpaiError> {
+    let path = find_manifest(&std::env::current_dir().unwrap())?;
+    let input = parse_jsonc(&path, 4, "invalid_manifest")?;
     if input["version"] != 1 {
         return Err(SenpaiError::new(
             4,
@@ -1011,17 +1007,6 @@ fn run_capsule(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
             i += 1;
             continue;
         }
-        if flag == "--manifest" {
-            if i + 1 >= args.len() {
-                return Err(SenpaiError::new(
-                    2,
-                    "invalid_arguments",
-                    "--manifest needs an absolute path.",
-                ));
-            }
-            i += 2;
-            continue;
-        }
         if !flag.starts_with("--") || i + 1 >= args.len() {
             return Err(SenpaiError::new(
                 2,
@@ -1266,13 +1251,14 @@ pub fn run(args: Vec<String>) -> i32 {
         if args.first().is_some_and(|command| command == "migrate")
             && args.get(1).is_some_and(|version| version == "v1")
         {
-            return migrate_v1(&args);
+            reject_removed_manifest_flag(&args)?;
+            return migrate_v1();
         }
         if args.first().is_some_and(|command| command == "resolve")
             && args.get(1).is_some_and(|command| command == "operation")
         {
-            let manifest = manifest_arg(&args)?;
-            let l = load(manifest)?;
+            reject_removed_manifest_flag(&args)?;
+            let l = load()?;
             return resolve_operation(&l, &args);
         }
         if args[0] == "resolve" {
@@ -1280,13 +1266,17 @@ pub fn run(args: Vec<String>) -> i32 {
                 .map(PathBuf::from)
                 .unwrap_or(std::env::current_dir().unwrap());
             let p = find_manifest(&from)?;
-            let l = load(Some(p.to_str().unwrap()))?;
+            let l = Loaded {
+                dir: p.parent().unwrap().to_path_buf(),
+                value: parse_jsonc(&p, 4, "invalid_manifest")?,
+                path: p,
+            };
             return Ok(
                 json!({"manifest_path":l.path,"manifest_directory":l.dir,"project":l.value["project"]["name"]}),
             );
         }
-        let manifest = manifest_arg(&args)?;
-        let l = load(manifest)?;
+        reject_removed_manifest_flag(&args)?;
+        let l = load()?;
         match args[0].as_str() {
             "summary" => Ok(summary(&l)),
             "get" => get_command(&l, &args),

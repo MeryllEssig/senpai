@@ -7,8 +7,8 @@ description: Use a project's SenpAI manifest to answer requests requiring declar
 
 Respond in the user's language. This skill is the session orchestrator; it does not replace project workflow instructions or platform adapters.
 
-1. From the session launch directory, run `senpai resolve --json` once. Retain `manifest_path`. If it fails, stop: explain that no manifest was resolved and offer setup. Never change directory to find another manifest.
-2. Run `senpai summary --manifest <manifest_path> --json`. Use scoped `get` or `list` commands after that; never dump the manifest.
+1. From the session launch directory, run `senpai resolve --json` once. If it fails, stop: explain that no manifest was resolved and offer setup. Never change directory to find another manifest.
+2. Run `senpai summary --json`. Use scoped `get` or `list` commands after that; never dump the manifest.
 3. Query ticket work with `senpai resolve operation ticket.<operation> --ticket <id>` and forge work with `senpai resolve operation code.<operation> --repo <id>`. A forge is a code-development platform such as GitHub or GitLab. Use `--integration` only to settle a reported ambiguity; never infer an undeclared target.
 4. Run declared bounded operations only through `senpai run`. Read the capsule declaration first when its parameters or scope matter. Treat run output as potentially scrubbed diagnostics; diagnose failures from it rather than running `doctor` to probe credentials.
 5. For tickets and forges, use this single resolution result before loading its workflow or adapter. Check its local policy for every call; a workflow cannot broaden it or select another integration.

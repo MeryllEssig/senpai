@@ -30,55 +30,67 @@ cat > "$workspace/.senpai.jsonc" <<'EOF'
 EOF
 
 mkdir -p "$workspace/app"
+cd "$workspace"
 result=$(cd "$workspace/app" && "$binary" summary --json)
 printf '%s' "$result" | grep -q '"ok":true'
-"$binary" resolve operation code.create --repo app --manifest "$workspace/.senpai.jsonc" --json | grep -q 'demo/app'
-"$binary" resolve operation ticket.comment --ticket '#12' --manifest "$workspace/.senpai.jsonc" --json | grep -q '"decision":"confirm"'
-"$binary" get repo --path "$workspace/app/subdir" --with-dependencies --manifest "$workspace/.senpai.jsonc" --json | grep -q '"id":"app"'
-"$binary" get repo --id app --manifest "$workspace/.senpai.jsonc" --json | grep -q '"labels":["backend","critical"]'
-"$binary" list repos --manifest "$workspace/.senpai.jsonc" --json | grep -q '"labels":["backend","critical"]'
-"$binary" summary --manifest "$workspace/.senpai.jsonc" --json | grep -q '"id":"app","labels":["backend","critical"]'
-if "$binary" get tracker --manifest "$workspace/.senpai.jsonc" --json >/dev/null; then
+"$binary" resolve operation code.create --repo app --json | grep -q 'demo/app'
+"$binary" resolve operation ticket.comment --ticket '#12' --json | grep -q '"decision":"confirm"'
+"$binary" get repo --path "$workspace/app/subdir" --with-dependencies --json | grep -q '"id":"app"'
+"$binary" get repo --id app --json | grep -q '"id":"app"'
+"$binary" list repos --json | grep -q 'backend'
+"$binary" summary --json | grep -q 'backend'
+if "$binary" summary --manifest "$workspace/.senpai.jsonc" --json >/dev/null; then
+  echo 'removed manifest option unexpectedly passed' >&2; exit 1
+fi
+if "$binary" get tracker --json >/dev/null; then
   echo 'obsolete command unexpectedly passed' >&2; exit 1
 fi
-echo_result=$("$binary" run echo --message hello --manifest "$workspace/.senpai.jsonc" --json)
+echo_result=$("$binary" run echo --message hello --json)
 printf '%s' "$echo_result" | grep -q 'hello'
-"$binary" init --manifest "$workspace/.senpai.jsonc" --json | grep -q 'private'
-if "$binary" validate local --manifest "$workspace/.senpai.jsonc" --json >/dev/null; then
+"$binary" init --json | grep -q 'private'
+if "$binary" validate local --json >/dev/null; then
   echo 'stubbed local configuration unexpectedly validated' >&2; exit 1
 fi
 mkdir -p "$workspace/.senpai"
 printf '{"private":{"token":"local-secret"}}\n' > "$workspace/.senpai/capsules.local.json"
-private_result=$("$binary" run private --manifest "$workspace/.senpai.jsonc" --json)
+private_result=$("$binary" run private --json)
 printf '%s' "$private_result" | grep -q '{redacted}'
-if "$binary" run echo --message hello --message twice --manifest "$workspace/.senpai.jsonc" --json >/dev/null; then
+if "$binary" run echo --message hello --message twice --json >/dev/null; then
   echo 'repeated supplied argument unexpectedly passed' >&2; exit 1
 fi
-if limited=$("$binary" run limited --manifest "$workspace/.senpai.jsonc" --json 2>&1); then
+if limited=$("$binary" run limited --json 2>&1); then
   echo 'unbounded capsule unexpectedly passed' >&2; exit 1
 fi
 printf '%s' "$limited" | grep -q 'output limit'
 printf '%s' "$limited" | node -e 'let input=""; process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { const output = JSON.parse(input).error.details[0]; if (Buffer.byteLength(output.stdout) + Buffer.byteLength(output.stderr) > 1) process.exit(1); })'
 shell_manifest="$workspace/shell.jsonc"
 sed 's/"program": "yes", "args": \[\]/"program": "sh", "args": ["-c", "echo shell-executed"]/' "$workspace/.senpai.jsonc" > "$shell_manifest"
-if "$binary" validate manifest --manifest "$shell_manifest" --json >/dev/null; then
+mkdir -p "$workspace/shell"
+mv "$shell_manifest" "$workspace/shell/.senpai.jsonc"
+if (cd "$workspace/shell" && "$binary" validate manifest --json) >/dev/null; then
   echo 'shell interpreter unexpectedly validated' >&2; exit 1
 fi
 legacy_manifest="$workspace/legacy.jsonc"
 sed 's/"program": "yes", "args": \[\]/"command": "yes"/' "$workspace/.senpai.jsonc" > "$legacy_manifest"
-if "$binary" validate manifest --manifest "$legacy_manifest" --json >/dev/null; then
+mkdir -p "$workspace/legacy"
+mv "$legacy_manifest" "$workspace/legacy/.senpai.jsonc"
+if (cd "$workspace/legacy" && "$binary" validate manifest --json) >/dev/null; then
   echo 'legacy command capsule unexpectedly validated' >&2; exit 1
 fi
 v1_manifest="$workspace/v1.jsonc"
 sed 's/"version": 2/"version": 1/' "$workspace/.senpai.jsonc" > "$v1_manifest"
-if "$binary" validate manifest --manifest "$v1_manifest" --json >/dev/null; then
+mkdir -p "$workspace/v1"
+mv "$v1_manifest" "$workspace/v1/.senpai.jsonc"
+if (cd "$workspace/v1" && "$binary" validate manifest --json) >/dev/null; then
   echo 'v1 manifest unexpectedly validated' >&2; exit 1
 fi
 migration_source="$workspace/migration-v1.jsonc"
 cat > "$migration_source" <<'EOF'
 {"version":1,"project":{"name":"legacy","label":"Legacy","context":"","stack":[]},"trackers":{"sources":{"redmine":{"type":"redmine","url":"https://legacy.example","project":"legacy","roles":["ticket_details"],"skill":"legacy-ticket-adapter"}}},"code_hosting":{"instances":{"git":{"platform":"gitlab","url":"https://git.legacy.example","roles":["merge_requests"]}}},"workflows":{"tickets":{"skill":"legacy-ticket-flow","policy":{"comment":"confirm"}}},"rules":[{"if":"a","then":"b"},{"if":"c","then":"d"}],"repos":{"app":{"path":".","hosting":{"git":"legacy/app"}}}}
 EOF
-migration_result=$("$binary" migrate v1 --manifest "$migration_source" --json)
+mkdir -p "$workspace/migration"
+mv "$migration_source" "$workspace/migration/.senpai.jsonc"
+migration_result=$(cd "$workspace/migration" && "$binary" migrate v1 --json)
 printf '%s' "$migration_result" | grep -q '"written":false'
 printf '%s' "$migration_result" | grep -q '"\$schema":"https://raw.githubusercontent.com/MeryllEssig/senpai/main/schema/senpai.schema.json"'
 printf '%s' "$migration_result" | grep -q 'legacy-ticket-flow'
@@ -97,7 +109,9 @@ EOF
 rustc "$workspace/child-spawner.rs" -o "$workspace/child-spawner"
 process_manifest="$workspace/process.jsonc"
 sed "s#\"program\": \"yes\", \"args\": \[\], \"max_output_bytes\": 1#\"program\": \"$workspace/child-spawner\", \"args\": [], \"timeout_seconds\": 1#" "$workspace/.senpai.jsonc" > "$process_manifest"
-process_result=$("$binary" run limited --manifest "$process_manifest" --json 2>&1 || true)
+mkdir -p "$workspace/process"
+mv "$process_manifest" "$workspace/process/.senpai.jsonc"
+process_result=$(cd "$workspace/process" && "$binary" run limited --json 2>&1 || true)
 printf '%s' "$process_result" | grep -q 'timed out'
 child_pid=$(printf '%s' "$process_result" | node -e 'let input=""; process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => process.stdout.write(JSON.parse(input).error.details[0].stdout.trim()))')
 [[ $child_pid =~ ^[0-9]+$ ]] || { echo 'child pid was not captured' >&2; exit 1; }

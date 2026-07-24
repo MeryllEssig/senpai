@@ -131,11 +131,11 @@ senpai run db-preprod --query "SELECT id FROM orders LIMIT 5" --json
 
 ## Scoped CLI queries
 
-Use `resolve` once at the start of an agent session, then retain the returned absolute manifest path for subsequent scoped queries.
+Use `resolve` once at the start of an agent session. Subsequent queries discover the same `.senpai.jsonc` from the current directory.
 
 ```sh
 senpai resolve --json
-senpai summary --manifest /absolute/path/.senpai.jsonc --json
+senpai summary --json
 
 senpai get repo --current --with-dependencies --json
 senpai resolve operation ticket.read --ticket ACME-42 --json
