@@ -161,6 +161,8 @@ Ticket and code-change workflows combine explicit `allow`, `confirm`, and `deny`
 
 Once a GitHub release is published, install the latest checksum-checked release for macOS or Linux on arm64 or x86_64 with (replace the agent list as needed):
 
+GitHub Actions runs verification and publishes a release only when a numeric `x.x.x` tag (for example, `1.0.0`) is pushed.
+
 ```sh
 curl --fail --location --silent --show-error \
   https://raw.githubusercontent.com/MeryllEssig/senpai/main/installer.sh | bash -s -- --agents codex
