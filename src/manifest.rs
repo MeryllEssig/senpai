@@ -108,10 +108,12 @@ pub fn find_manifest(from: &Path) -> Result<PathBuf, SenpaiError> {
         here.pop();
     }
     loop {
-        let candidate = here.join(".senpai.jsonc");
-        if candidate.is_file() {
-            return fs::canonicalize(candidate)
-                .map_err(|e| SenpaiError::new(3, "manifest_not_found", e.to_string()));
+        for name in [".senpai.jsonc", ".senpai.local.jsonc"] {
+            let candidate = here.join(name);
+            if candidate.is_file() {
+                return fs::canonicalize(candidate)
+                    .map_err(|e| SenpaiError::new(3, "manifest_not_found", e.to_string()));
+            }
         }
         if !here.pop() {
             break;
@@ -120,7 +122,7 @@ pub fn find_manifest(from: &Path) -> Result<PathBuf, SenpaiError> {
     Err(SenpaiError::new(
         3,
         "manifest_not_found",
-        "No .senpai.jsonc found while walking upward from the requested directory.",
+        "No .senpai.jsonc or .senpai.local.jsonc found while walking upward from the requested directory.",
     ))
 }
 
@@ -147,11 +149,14 @@ pub struct Loaded {
     pub value: Value,
 }
 pub fn load() -> Result<Loaded, SenpaiError> {
-    let path = find_manifest(&std::env::current_dir().unwrap())?;
+    load_from(&std::env::current_dir().unwrap())
+}
+pub fn load_from(from: &Path) -> Result<Loaded, SenpaiError> {
+    let path = find_manifest(from)?;
     let dir = path.parent().unwrap().to_path_buf();
     let mut value = parse_jsonc(&path, 4, "invalid_manifest")?;
     let overlay = dir.join(".senpai.local.jsonc");
-    if overlay.is_file() {
+    if path.file_name().is_some_and(|name| name == ".senpai.jsonc") && overlay.is_file() {
         let o = parse_jsonc(&overlay, 4, "invalid_overlay")?;
         deep_merge(&mut value, o);
     }
@@ -750,6 +755,27 @@ mod tests {
         assert_eq!(base["project"]["label"], "Personal");
         assert_eq!(base["project"]["stack"], json!(["Rust"]));
         assert!(base["docs"].get("guide").is_none());
+    }
+
+    #[test]
+    fn manifest_discovery_accepts_a_standalone_local_manifest() {
+        let workspace = tempfile::tempdir().unwrap();
+        let nested = workspace.path().join("app/src");
+        fs::create_dir_all(&nested).unwrap();
+        let local = workspace.path().join(".senpai.local.jsonc");
+        fs::write(&local, "{}").unwrap();
+
+        assert_eq!(
+            find_manifest(&nested).unwrap(),
+            fs::canonicalize(&local).unwrap()
+        );
+
+        let shared = workspace.path().join(".senpai.jsonc");
+        fs::write(&shared, "{}").unwrap();
+        assert_eq!(
+            find_manifest(&nested).unwrap(),
+            fs::canonicalize(&shared).unwrap()
+        );
     }
 
     #[test]

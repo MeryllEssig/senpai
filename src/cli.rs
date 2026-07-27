@@ -64,7 +64,7 @@ fn reject_removed_manifest_flag(args: &[String]) -> Result<(), SenpaiError> {
         return Err(SenpaiError::new(
             2,
             "invalid_arguments",
-            "--manifest was removed; SenpAI discovers .senpai.jsonc from the current directory.",
+            "--manifest was removed; SenpAI discovers .senpai.jsonc or .senpai.local.jsonc from the current directory.",
         ));
     }
     Ok(())
@@ -1265,12 +1265,7 @@ pub fn run(args: Vec<String>) -> i32 {
             let from = get_flag(&args, "--from")
                 .map(PathBuf::from)
                 .unwrap_or(std::env::current_dir().unwrap());
-            let p = find_manifest(&from)?;
-            let l = Loaded {
-                dir: p.parent().unwrap().to_path_buf(),
-                value: parse_jsonc(&p, 4, "invalid_manifest")?,
-                path: p,
-            };
+            let l = load_from(&from)?;
             return Ok(
                 json!({"manifest_path":l.path,"manifest_directory":l.dir,"project":l.value["project"]["name"]}),
             );

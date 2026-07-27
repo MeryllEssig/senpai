@@ -33,6 +33,13 @@ mkdir -p "$workspace/app"
 cd "$workspace"
 result=$(cd "$workspace/app" && "$binary" summary --json)
 printf '%s' "$result" | grep -q '"ok":true'
+mkdir -p "$workspace/local-only/app"
+sed 's/"name": "demo"/"name": "local-only"/' "$workspace/.senpai.jsonc" > "$workspace/local-only/.senpai.local.jsonc"
+local_only_result=$(cd "$workspace/local-only/app" && "$binary" summary --json)
+printf '%s' "$local_only_result" | grep -q '"project":"local-only"'
+printf '{"project":{"name":"overridden"}}\n' > "$workspace/.senpai.local.jsonc"
+override_result=$("$binary" resolve --from "$workspace/app" --json)
+printf '%s' "$override_result" | grep -q '"project":"overridden"'
 "$binary" resolve operation code.create --repo app --json | grep -q 'demo/app'
 "$binary" resolve operation ticket.comment --ticket '#12' --json | grep -q '"decision":"confirm"'
 "$binary" get repo --path "$workspace/app/subdir" --with-dependencies --json | grep -q '"id":"app"'

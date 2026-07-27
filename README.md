@@ -10,7 +10,7 @@
   Declarative, project-scoped context for AI coding agents.
 </p>
 
-SenpAI gives an AI agent the context it needs to work in a project without requiring that context to be repeated each session. A commented `.senpai.jsonc` manifest describes the project's integrations, repositories, environments, documentation, per-integration workflows, and safe bounded operations. The `senpai` CLI then returns only the relevant slice.
+SenpAI gives an AI agent the context it needs to work in a project without requiring that context to be repeated each session. A commented `.senpai.jsonc` manifest—or a standalone `.senpai.local.jsonc`—describes the project's integrations, repositories, environments, documentation, per-integration workflows, and safe bounded operations. The `senpai` CLI then returns only the relevant slice.
 
 It is designed for Codex, Claude Code, Gemini CLI, OpenCode, and other agents that can run commands and follow Markdown instructions.
 
@@ -89,13 +89,13 @@ Start from the fully annotated [reference manifest](doc/reference-manifest.jsonc
 ## How it works
 
 ```text
-.senpai.jsonc ──► senpai CLI ──► focused context for the agent
+.senpai.jsonc or .senpai.local.jsonc ──► senpai CLI ──► focused context for the agent
        │                │
        │                └──► declared capsules only (no shell, bounded output)
        └──► optional .senpai.local.jsonc overlay
 ```
 
-The committed manifest is JSONC, so it can explain the project's ecosystem in place. A personal `.senpai.local.jsonc` overlay is deep-merged locally for paths, preferences, or authentication configuration. Capsule values are kept separately because they may contain secrets.
+The committed manifest is JSONC, so it can explain the project's ecosystem in place. When it sits beside `.senpai.jsonc`, a personal `.senpai.local.jsonc` is deep-merged locally for paths, preferences, or authentication configuration. It may also be used by itself as a complete, machine-local manifest. Capsule values are kept separately because they may contain secrets.
 
 SenpAI is deliberately not an orchestration engine: manifest queries never contact external services. The only execution surface is `senpai run`, which runs a declared capsule.
 
@@ -131,7 +131,7 @@ senpai run db-preprod --query "SELECT id FROM orders LIMIT 5" --json
 
 ## Scoped CLI queries
 
-Use `resolve` once at the start of an agent session. Subsequent queries discover the same `.senpai.jsonc` from the current directory.
+Use `resolve` once at the start of an agent session. Subsequent queries discover the same `.senpai.jsonc` or `.senpai.local.jsonc` from the current directory.
 
 ```sh
 senpai resolve --json

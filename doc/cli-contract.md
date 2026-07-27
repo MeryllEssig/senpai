@@ -1,6 +1,6 @@
 # SenpAI CLI contract — manifest v2
 
-All manifest reads discover `.senpai.jsonc` by walking upward from the current directory and never contact a remote service. The `--manifest` option is not supported. JSON output is `{ "ok": true, "data": …, "warnings": [] }`; errors are `{ "ok": false, "error": { "code": "…", "message": "…", "details": [] } }`. No result, error, or adapter handoff contains a secret value.
+All manifest reads discover `.senpai.jsonc` or `.senpai.local.jsonc` by walking upward from the current directory and never contact a remote service. In a directory containing both, `.senpai.jsonc` is selected and the local file is deep-merged as its override; a standalone local file must therefore be a complete v2 manifest. The `--manifest` option is not supported. JSON output is `{ "ok": true, "data": …, "warnings": [] }`; errors are `{ "ok": false, "error": { "code": "…", "message": "…", "details": [] } }`. No result, error, or adapter handoff contains a secret value.
 
 ## Integration resolution
 
