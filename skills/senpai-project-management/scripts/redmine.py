@@ -6,13 +6,16 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_OUTPUT = 1024 * 1024
+DEFAULT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 
 
 class AdapterError(Exception):
@@ -107,6 +110,87 @@ class Redmine:
                 return {"issues": items, "total_count": total, "returned_count": len(items)}
             offset += len(page)
 
+    def download(self, url: str, destination: Path) -> None:
+        attachment_url = urllib.parse.urlparse(url)
+        instance_url = urllib.parse.urlparse(self.url)
+        if (
+            attachment_url.scheme not in {"https", "http"}
+            or (attachment_url.scheme, attachment_url.netloc) != (instance_url.scheme, instance_url.netloc)
+        ):
+            raise AdapterError("attachment URL is not on the configured Redmine instance")
+        request = urllib.request.Request(
+            url,
+            headers={"X-Redmine-API-Key": self.api_key},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                raw = response.read(DEFAULT_MAX_ATTACHMENT_BYTES + 1)
+        except urllib.error.HTTPError as exc:
+            raise AdapterError(f"Redmine attachment HTTP {exc.code} {exc.reason}") from exc
+        except urllib.error.URLError as exc:
+            raise AdapterError(f"Redmine attachment connection failed: {exc.reason}") from exc
+        except TimeoutError as exc:
+            raise AdapterError("Redmine attachment request timed out") from exc
+        if len(raw) > DEFAULT_MAX_ATTACHMENT_BYTES:
+            raise AdapterError(f"attachment exceeded {DEFAULT_MAX_ATTACHMENT_BYTES} bytes")
+        destination.write_bytes(raw)
+
+
+def replace_attachment_urls(text: str, url_map: dict[str, str]) -> str:
+    for remote, local in url_map.items():
+        text = text.replace(remote, local)
+    return text
+
+
+def read_issue_with_attachments(issue_id: str, client: Redmine, attachment_directory: Path) -> dict[str, Any]:
+    result = client.request("GET", f"/issues/{urllib.parse.quote(issue_id, safe='')}.json?include=journals,relations,attachments")
+    issue = result.get("issue") if isinstance(result, dict) else None
+    if not isinstance(issue, dict):
+        raise AdapterError("Redmine issue response did not contain an issue")
+
+    attachment_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    url_map: dict[str, str] = {}
+    attachments = issue.get("attachments")
+    if not isinstance(attachments, list):
+        attachments = []
+    for attachment in attachments:
+        if not isinstance(attachment, dict):
+            continue
+        content_url = attachment.get("content_url")
+        filename = attachment.get("filename")
+        if not isinstance(content_url, str) or not content_url:
+            attachment["local_url"] = ""
+            attachment["download_error"] = "no content_url"
+            continue
+        suffix = Path(filename).suffix if isinstance(filename, str) else ""
+        if not suffix or any(character not in ".-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" for character in suffix):
+            suffix = ""
+        descriptor, local_url = tempfile.mkstemp(prefix="redmine-", suffix=suffix, dir=attachment_directory)
+        os.close(descriptor)
+        try:
+            client.download(content_url, Path(local_url))
+        except AdapterError as exc:
+            Path(local_url).unlink(missing_ok=True)
+            attachment["local_url"] = ""
+            attachment["download_error"] = str(exc)
+            continue
+        attachment["local_url"] = local_url
+        url_map[content_url] = local_url
+        thumbnail_url = attachment.get("thumbnail_url")
+        if isinstance(thumbnail_url, str) and thumbnail_url:
+            url_map[thumbnail_url] = local_url
+        if isinstance(filename, str) and filename:
+            url_map[filename] = local_url
+
+    if isinstance(issue.get("description"), str):
+        issue["description"] = replace_attachment_urls(issue["description"], url_map)
+    journals = issue.get("journals")
+    if isinstance(journals, list):
+        for journal in journals:
+            if isinstance(journal, dict) and isinstance(journal.get("notes"), str):
+                journal["notes"] = replace_attachment_urls(journal["notes"], url_map)
+    return result
+
 
 def query(params: dict[str, Any]) -> str:
     return "?" + urllib.parse.urlencode({k: v for k, v in params.items() if v is not None}) if params else ""
@@ -137,7 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(args: argparse.Namespace, client: Redmine) -> Any:
     if args.operation == "get-issue":
-        return client.request("GET", f"/issues/{urllib.parse.quote(args.id, safe='')}.json?include=journals,relations,attachments")
+        return read_issue_with_attachments(args.id, client, Path(tempfile.gettempdir()) / "senpai" / "redmine-attachments")
     if args.operation == "list-issues":
         return client.list_pages("/issues.json" + query({"project_id": args.project, "status_id": args.status_id, "assigned_to_id": args.assigned_to_id}), args.limit, args.all)
     if args.operation == "list-statuses": return client.request("GET", "/issue_statuses.json")

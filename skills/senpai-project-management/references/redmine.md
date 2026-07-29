@@ -6,6 +6,8 @@ and sends it as `X-Redmine-API-Key`. It accepts `--timeout` (seconds) and
 `--max-output-bytes` (default 1 MiB). Output is JSON only. Errors are concise,
 credential-scrubbed JSON on stderr and exit nonzero.
 
+When reading a ticket, the adapter downloads each attached file from the configured Redmine instance into a local temporary directory. Each attachment gains a `local_url` field; its remote URL, thumbnail URL, and filename are replaced with that local path in the ticket description and journal notes. This lets agents inspect images embedded in Redmine tickets. Downloads are authenticated, limited to 20 MiB per attachment, and failed downloads are retained in the response with an empty `local_url` and a `download_error`.
+
 | Operation | Script subcommand | Redmine endpoint |
 |---|---|---|
 | Read ticket | `get-issue` | `GET /issues/:id.json?include=journals,relations,attachments` |
