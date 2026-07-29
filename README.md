@@ -20,7 +20,7 @@ It is designed for Codex, Claude Code, Gemini CLI, OpenCode, and other agents th
 ```sh
 senpai resolve --json                          # Discover the project manifest
 senpai summary --json                          # Get the project at a glance
-senpai resolve operation ticket.read --ticket ACME-42 --json
+senpai resolve operation code.read --repo app --json
 senpai run test --json                         # Run a reviewed, bounded operation
 ```
 
@@ -74,8 +74,17 @@ Create `.senpai.jsonc` at the root of a project:
     "context": "API used by the customer portal.",
     "stack": ["Rust", "PostgreSQL"]
   },
+  "integrations": {
+    "origin": {
+      "kind": "forge",
+      "platform": "gitlab",
+      "url": "https://git.example",
+      "provides": ["code.read"],
+      "handles": ["code.read"]
+    }
+  },
   "repos": {
-    "app": { "path": "." }
+    "app": { "path": ".", "integrations": { "origin": "my-group/my-service" } }
   },
   "environments": {
     "local": { "label": "Local development", "repo": "app" }
@@ -108,7 +117,7 @@ Start with the fully annotated [reference manifest](doc/reference-manifest.jsonc
 
 | Command | Description |
 |:---|:---|
-| `senpai init` | Create starter local configuration and capsule-values files. |
+| `senpai init` | Create or update private capsule-value placeholders and add their file to `.gitignore`. |
 | `senpai resolve --json` | Discover the active manifest and its project root. |
 | `senpai summary --json` | Return a compact project overview. |
 | `senpai get repo --current --with-dependencies --json` | Get the current repository and its dependencies. |
@@ -119,7 +128,7 @@ Start with the fully annotated [reference manifest](doc/reference-manifest.jsonc
 | `senpai validate manifest --json` | Validate the shared manifest. |
 | `senpai validate local --json` | Validate local configuration and private capsule values. |
 
-Commands produce compact Markdown by default or a stable JSON envelope with `--json`. The full [CLI contract](doc/cli-contract.md) documents all commands, filters, exit codes, and output guarantees.
+Without `--json`, the CLI prints concise human-readable output. Use `--json` for its stable machine-readable envelope. The full [CLI contract](doc/cli-contract.md) documents all commands, filters, exit codes, and output guarantees.
 
 ## How it works
 
@@ -130,7 +139,7 @@ Commands produce compact Markdown by default or a stable JSON envelope with `--j
        └──► optional .senpai.local.jsonc overlay
 ```
 
-The committed manifest is JSONC, so it can document the project ecosystem in place. A personal `.senpai.local.jsonc` beside it is deep-merged for paths, preferences, or authentication configuration; it can also stand alone as a complete machine-local manifest. Capsule values stay separate because they may contain secrets.
+The committed manifest is JSONC, so it can document the project ecosystem in place. A personal `.senpai.local.jsonc` beside it is deep-merged for paths, preferences, or authentication configuration; it can also stand alone as a complete machine-local manifest.
 
 SenpAI does not orchestrate external services while querying a manifest. Its only execution surface is `senpai run`, which runs a declared capsule.
 
@@ -166,6 +175,8 @@ A capsule is a deterministic, non-interactive argv command for finite operations
 | `senpai-discover-project-automation` | Propose safe automation opportunities without applying them. |
 | `senpai-project-management` | Work with ticketing platforms through focused adapters. |
 | `senpai-code-hosting` | Work with code-hosting platforms through focused adapters. |
+| `senpai-project-use-ticket-workflow` | Apply the default read-only ticket workflow. |
+| `senpai-project-use-code-hosting-workflow` | Apply the default read-only forge workflow. |
 
 Ticket and code-change workflows combine explicit `allow`, `confirm`, and `deny` policies with project-specific instructions. If no workflow is declared, reads are allowed and writes are denied.
 
