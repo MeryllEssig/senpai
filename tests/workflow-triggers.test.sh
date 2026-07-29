@@ -12,6 +12,9 @@ assert_contains() {
 
 for workflow in .github/workflows/ci.yml .github/workflows/release.yml; do
   assert_contains "$workflow" "    tags: ['[0-9]+.[0-9]+.[0-9]+']"
+  assert_contains "$workflow" "      - uses: actions/checkout@v5"
+  assert_contains "$workflow" "      - uses: actions/setup-node@v5"
+  assert_contains "$workflow" "          node-version: 24"
 done
 
 if grep -Fqx '  pull_request:' .github/workflows/ci.yml; then
@@ -35,3 +38,7 @@ for linux_target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
 done
 
 assert_contains .github/workflows/release.yml '        run: gh release create "${{ github.ref_name }}" dist/senpai-*.tar.gz dist/checksums.txt --repo "${{ github.repository }}" --generate-notes'
+assert_contains .github/workflows/release.yml "      - uses: actions/upload-artifact@v6"
+assert_contains .github/workflows/release.yml "      - uses: actions/download-artifact@v7"
+grep -Fqx '24' .nvmrc
+grep -Fqx '    "node": ">=24 <25"' package.json

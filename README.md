@@ -192,7 +192,7 @@ Ticket and code-change workflows combine explicit `allow`, `confirm`, and `deny`
 
 ## Development
 
-Prerequisites: stable Rust, Bun, and Bash. Python 3 is required only for the Redmine adapter and its tests.
+Prerequisites: stable Rust, Node.js 24, Bun, and Bash. Python 3 is required only for the Redmine adapter and its tests.
 
 ```sh
 bun install
