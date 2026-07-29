@@ -41,7 +41,7 @@ senpai run test --json                         # Run a reviewed, bounded operati
 
 ### Quick install
 
-Once a GitHub release is published, install the latest checksum-checked release for macOS or Linux on arm64 or x86_64:
+Once a GitHub release is published, install the latest checksum-checked Linux release on arm64 or x86_64. macOS release artifacts are temporarily unavailable; install from source there instead.
 
 ```sh
 curl --fail --location --silent --show-error \

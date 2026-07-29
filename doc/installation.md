@@ -1,6 +1,6 @@
 # Installation
 
-`installer.sh` installs a GitHub release by default. It detects macOS or Linux and arm64 or x86_64, downloads the matching archive, then checks its SHA-256 against `checksums.txt` from that same release before extracting anything. Linux artifacts use musl targets, so they do not depend on a particular glibc version. This detects transfer corruption; GitHub repository access controls protect the release assets.
+`installer.sh` installs a GitHub release by default. Published release artifacts are temporarily available for Linux arm64 and x86_64 only; install from source on macOS. It downloads the matching archive, then checks its SHA-256 against `checksums.txt` from that same release before extracting anything. Linux artifacts use musl targets, so they do not depend on a particular glibc version. This detects transfer corruption; GitHub repository access controls protect the release assets.
 
 ```sh
 curl --fail --location --silent --show-error \

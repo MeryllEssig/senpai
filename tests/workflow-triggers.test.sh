@@ -18,3 +18,18 @@ if grep -Fqx '  pull_request:' .github/workflows/ci.yml; then
   printf 'CI must run only for numeric release tags\n' >&2
   exit 1
 fi
+
+for macos_target in x86_64-apple-darwin aarch64-apple-darwin; do
+  if grep -Fq -- "$macos_target" .github/workflows/release.yml; then
+    printf 'macOS release artifacts must remain temporarily disabled: %s\n' "$macos_target" >&2
+    exit 1
+  fi
+done
+
+for linux_target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
+  assert_contains .github/workflows/release.yml "          - os: ubuntu-latest"
+  if ! grep -Fq -- "$linux_target" .github/workflows/release.yml; then
+    printf 'Linux release artifact is missing: %s\n' "$linux_target" >&2
+    exit 1
+  fi
+done
