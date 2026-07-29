@@ -1,44 +1,71 @@
-<p align="center">
-  <a href="https://github.com/MeryllEssig/senpai">
-    <img src="assets/senpai-logo.png" alt="SenpAI logo" width="200">
-  </a>
-</p>
+<div align="center">
 
-<h2 align="center"><a href="https://github.com/MeryllEssig/senpai">SenpAI</a></h2>
+<img src="assets/senpai-logo.png" alt="SenpAI" width="200" />
 
-<p align="center">
-  Declarative, project-scoped context for AI coding agents.
-</p>
+# SenpAI
+
+*Declarative, project-scoped context for AI coding agents*
+
+[![Build Status](https://img.shields.io/github/actions/workflow/status/MeryllEssig/senpai/ci.yml?style=flat-square&label=Build)](https://github.com/MeryllEssig/senpai/actions)
+![Rust](https://img.shields.io/badge/Rust-2024-orange?style=flat-square&logo=rust&logoColor=white)
+
+[Features](#features) | [Installation](#installation) | [Quick start](#quick-start) | [Usage](#usage) | [Documentation](#documentation)
+
+</div>
 
 SenpAI gives an AI agent the context it needs to work in a project without requiring that context to be repeated each session. A commented `.senpai.jsonc` manifest—or a standalone `.senpai.local.jsonc`—describes the project's integrations, repositories, environments, documentation, per-integration workflows, and safe bounded operations. The `senpai` CLI then returns only the relevant slice.
 
 It is designed for Codex, Claude Code, Gemini CLI, OpenCode, and other agents that can run commands and follow Markdown instructions.
 
+```sh
+senpai resolve --json                          # Discover the project manifest
+senpai summary --json                          # Get the project at a glance
+senpai resolve operation ticket.read --ticket ACME-42 --json
+senpai run test --json                         # Run a reviewed, bounded operation
+```
+
+## Features
+
+- **Project-scoped context** — A small, reviewable manifest travels with the project instead of relying on a central registry or agent-specific configuration.
+- **Focused answers** — Agents query only the repository, environment, documentation, workflow, or operation they need.
+- **Integration routing** — Ticket and forge operations resolve through the project's declared integrations, policies, and workflows.
+- **Multi-repository awareness** — Describe repositories, dependencies, and logical environments in one place.
+- **Bounded operations** — Reviewed capsules run deterministic, non-interactive argv commands without shell access.
+- **Private local values** — Keep machine-local configuration and capsule secrets out of the shared manifest.
+- **Agent skills included** — Install focused skills for Codex, Claude Code, Gemini CLI, and OpenCode.
+
 > [!IMPORTANT]
 > Never put secrets in `.senpai.jsonc` or `.senpai.local.jsonc`. Private capsule values belong in the gitignored `.senpai/capsules.local.json` file, where SenpAI resolves and scrubs them during execution.
 
-## Why SenpAI?
+## Installation
 
-Project knowledge is often scattered between people, scripts, ticket trackers, code-hosting platforms, and environment-specific runbooks. SenpAI keeps a small, reviewable declaration beside the project so an agent can reliably:
+### Quick install
 
-- resolve ticket and code-platform operations through declared integrations;
-- understand multi-repository projects and their dependencies;
-- find environments, documentation, and relevant workflows;
-- run declared tests, diagnostics, exports, or database queries as bounded capsules; and
-- keep machine-local preferences and private values out of the shared manifest.
+Once a GitHub release is published, install the latest checksum-checked release for macOS or Linux on arm64 or x86_64:
 
-The result is portable context rather than a central registry or an agent-specific configuration format.
+```sh
+curl --fail --location --silent --show-error \
+  https://raw.githubusercontent.com/MeryllEssig/senpai/main/installer.sh | bash -s -- --agents codex
+```
+
+The installer downloads the matching archive, verifies its SHA-256 from the same release, and installs the binary plus the requested skills. Use `--agents claude,gemini,opencode`, `all`, or `none` to choose destinations.
+
+### From source
+
+```sh
+git clone https://github.com/MeryllEssig/senpai.git
+cd senpai
+cargo build --release
+./installer.sh --binary ./target/release/senpai --skills-dir ./skills --agents codex
+```
+
+See [local installation](doc/installation.md) for install locations, custom prefixes, release selection, and uninstallation.
 
 ## Quick start
 
-Build the CLI, then add a manifest at your project root (or in a parent directory when the repository must remain untouched):
-
-```sh
-cargo build --release
-```
+Create `.senpai.jsonc` at the root of a project:
 
 ```jsonc
-// .senpai.jsonc
 {
   "version": 2,
   "project": {
@@ -47,17 +74,8 @@ cargo build --release
     "context": "API used by the customer portal.",
     "stack": ["Rust", "PostgreSQL"]
   },
-  "integrations": {
-    "origin": {
-      "kind": "forge",
-      "platform": "gitlab",
-      "url": "https://git.example",
-      "provides": ["code.read"],
-      "handles": ["code.read"]
-    }
-  },
   "repos": {
-    "app": { "path": ".", "integrations": { "origin": "my-group/my-service" } }
+    "app": { "path": "." }
   },
   "environments": {
     "local": { "label": "Local development", "repo": "app" }
@@ -75,16 +93,33 @@ cargo build --release
 }
 ```
 
-From any directory inside that project, SenpAI discovers the manifest by walking upward, like Git:
+From any directory inside the project, SenpAI discovers the manifest by walking upward, like Git:
 
 ```sh
-./target/release/senpai validate manifest --json
-./target/release/senpai summary --json
-./target/release/senpai list capsules --json
-./target/release/senpai run test --json
+senpai validate manifest --json
+senpai summary --json
+senpai list capsules --json
+senpai run test --json
 ```
 
-Start from the fully annotated [reference manifest](doc/reference-manifest.jsonc) for every supported declaration and field shape.
+Start with the fully annotated [reference manifest](doc/reference-manifest.jsonc) when you need integrations, multiple repositories, workflows, or richer capsule definitions.
+
+## Usage
+
+| Command | Description |
+|:---|:---|
+| `senpai init` | Create starter local configuration and capsule-values files. |
+| `senpai resolve --json` | Discover the active manifest and its project root. |
+| `senpai summary --json` | Return a compact project overview. |
+| `senpai get repo --current --with-dependencies --json` | Get the current repository and its dependencies. |
+| `senpai resolve operation ticket.read --ticket ACME-42 --json` | Resolve the integration and workflow for a ticket operation. |
+| `senpai resolve operation code.read --repo app --json` | Resolve the integration and workflow for a forge operation. |
+| `senpai list capsules --repo app --env preprod --json` | List operations available in a repository or environment. |
+| `senpai run <capsule> --json` | Run a declared capsule with bounded output. |
+| `senpai validate manifest --json` | Validate the shared manifest. |
+| `senpai validate local --json` | Validate local configuration and private capsule values. |
+
+Commands produce compact Markdown by default or a stable JSON envelope with `--json`. The full [CLI contract](doc/cli-contract.md) documents all commands, filters, exit codes, and output guarantees.
 
 ## How it works
 
@@ -95,15 +130,13 @@ Start from the fully annotated [reference manifest](doc/reference-manifest.jsonc
        └──► optional .senpai.local.jsonc overlay
 ```
 
-The committed manifest is JSONC, so it can explain the project's ecosystem in place. When it sits beside `.senpai.jsonc`, a personal `.senpai.local.jsonc` is deep-merged locally for paths, preferences, or authentication configuration. It may also be used by itself as a complete, machine-local manifest. Capsule values are kept separately because they may contain secrets.
+The committed manifest is JSONC, so it can document the project ecosystem in place. A personal `.senpai.local.jsonc` beside it is deep-merged for paths, preferences, or authentication configuration; it can also stand alone as a complete machine-local manifest. Capsule values stay separate because they may contain secrets.
 
-SenpAI is deliberately not an orchestration engine: manifest queries never contact external services. The only execution surface is `senpai run`, which runs a declared capsule.
+SenpAI does not orchestrate external services while querying a manifest. Its only execution surface is `senpai run`, which runs a declared capsule.
 
-In a V2 manifest, a `forge` is a code-development platform such as GitHub or GitLab: it hosts repositories and provides review and pipeline operations.
+## Capsules
 
-## Capsules: bounded operations without secret leakage
-
-A capsule is a deterministic, non-interactive argv command. It is suitable for finite operations such as tests, builds, bounded log reads, exports, or a single database query.
+A capsule is a deterministic, non-interactive argv command for finite operations: tests, builds, bounded log reads, exports, or one database query.
 
 ```jsonc
 "db-preprod": {
@@ -118,73 +151,33 @@ A capsule is a deterministic, non-interactive argv command. It is suitable for f
 }
 ```
 
-`{query}` is supplied by the agent at invocation time. `{password}` is resolved inside SenpAI from `.senpai/capsules.local.json` and is never printed in the resolved arguments or process output.
-
-```sh
-senpai init
-senpai validate local --json
-senpai run db-preprod --query "SELECT id FROM orders LIMIT 5" --json
-```
+`{query}` is supplied at invocation time. `{password}` is resolved inside SenpAI from `.senpai/capsules.local.json` and is never printed in resolved arguments or process output.
 
 > [!NOTE]
 > Capsules receive no shell, stdin, or TTY. `program` and `args` are passed directly to the operating system; shell and language interpreters are rejected. This is a guardrail for reviewed manifests, not an OS sandbox.
 
-## Scoped CLI queries
-
-Use `resolve` once at the start of an agent session. Subsequent queries discover the same `.senpai.jsonc` or `.senpai.local.jsonc` from the current directory.
-
-```sh
-senpai resolve --json
-senpai summary --json
-
-senpai get repo --current --with-dependencies --json
-senpai resolve operation ticket.read --ticket ACME-42 --json
-senpai resolve operation code.read --repo app --json
-senpai list capsules --repo app --env preprod --json
-```
-
-Commands produce compact Markdown by default or a stable JSON envelope with `--json`. See the complete [CLI contract](doc/cli-contract.md) for commands, exit codes, filtering, and output guarantees.
-
 ## Agent skills
 
-SenpAI ships Markdown skills for agent ecosystems that support them:
+| Skill | Purpose |
+|:---|:---|
+| `senpai-use-project-context` | Resolve a manifest and retrieve only the needed context. |
+| `senpai-setup-project-context` | Interview, create, and validate a new manifest. |
+| `senpai-manage-project-context` | Safely evolve an existing manifest. |
+| `senpai-discover-project-automation` | Propose safe automation opportunities without applying them. |
+| `senpai-project-management` | Work with ticketing platforms through focused adapters. |
+| `senpai-code-hosting` | Work with code-hosting platforms through focused adapters. |
 
-- `senpai-use-project-context` — resolve a manifest and retrieve only the needed context.
-- `senpai-setup-project-context` — interview, create, and validate a new manifest.
-- `senpai-manage-project-context` — safely evolve an existing manifest.
-- `senpai-discover-project-automation` — propose safe automation opportunities without applying them.
-- `senpai-project-management` and `senpai-code-hosting` — common interfaces with platform-specific guidance, including a standard-library Redmine adapter.
+Ticket and code-change workflows combine explicit `allow`, `confirm`, and `deny` policies with project-specific instructions. If no workflow is declared, reads are allowed and writes are denied.
 
-Ticket and code-change workflows combine explicit `allow`, `confirm`, and `deny` policies with project-specific instructions. When no workflow is declared, reads are allowed and writes are denied.
+## Documentation
 
-## Install
-
-Once a GitHub release is published, install the latest checksum-checked release for macOS or Linux on arm64 or x86_64 with (replace the agent list as needed):
-
-GitHub Actions runs verification and publishes a release only when a numeric `x.x.x` tag (for example, `1.0.0`) is pushed.
-
-```sh
-curl --fail --location --silent --show-error \
-  https://raw.githubusercontent.com/MeryllEssig/senpai/main/installer.sh | bash -s -- --agents codex
-```
-
-The installer downloads the matching archive and verifies its SHA-256 from the same release before installing the binary and selected skills. This detects a corrupted download; repository access controls protect the release assets. Before the first public release, or while developing locally, build and install from the checkout:
-
-```sh
-cargo build --release
-./installer.sh \
-  --binary ./target/release/senpai \
-  --skills-dir ./skills \
-  --agents codex,claude
-```
-
-The installer supports `codex`, `claude`, `gemini`, `opencode`, `all`, and `none`; use `--yes` for non-interactive automation. It records exactly the binary and `senpai-*` skill directories it owns, allowing a safe removal:
-
-```sh
-./installer.sh --uninstall
-```
-
-Read [local installation](doc/installation.md) for destination paths, custom prefixes, release selection, ownership tracking, and uninstall behavior.
+- [Goals and non-goals](doc/goal.md)
+- [User stories](doc/user-stories.md)
+- [Technical considerations](doc/technical-considerations.md)
+- [CLI contract](doc/cli-contract.md)
+- [Manifest JSON Schema](schema/senpai.schema.json)
+- [Reference manifest](doc/reference-manifest.jsonc)
+- [Reference local capsule values](doc/reference-capsule.jsonc)
 
 ## Development
 
@@ -204,24 +197,3 @@ bun run test:installer
 bun run test:cli
 cargo test
 ```
-
-## Documentation
-
-- [Goals and non-goals](doc/goal.md)
-- [Technical considerations](doc/technical-considerations.md)
-- [CLI contract](doc/cli-contract.md)
-- [Manifest JSON Schema](schema/senpai.schema.json)
-- [Reference manifest](doc/reference-manifest.jsonc)
-- [Reference local capsule values](doc/reference-capsule.jsonc)
-- [User stories](doc/user-stories.md)
-
-## Repository layout
-
-| Path | Purpose |
-|---|---|
-| `src/` | Standalone Rust CLI |
-| `schema/` | Versioned manifest JSON Schema |
-| `skills/` | Skills installed for supported agent ecosystems |
-| `maintainer/` | Maintainer-only quality-assurance skill |
-| `doc/` | Product design, contract, rationale, and examples |
-| `tests/` | Hermetic CLI and installer tests |
