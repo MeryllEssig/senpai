@@ -33,3 +33,5 @@ for linux_target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
     exit 1
   fi
 done
+
+assert_contains .github/workflows/release.yml '        run: gh release create "${{ github.ref_name }}" dist/senpai-*.tar.gz dist/checksums.txt --repo "${{ github.repository }}" --generate-notes'
