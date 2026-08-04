@@ -90,6 +90,8 @@ function assertReference(manifest) {
   const repoIds = new Set(Object.keys(manifest.repos ?? {}));
   const environmentIds = new Set(Object.keys(manifest.environments ?? {}));
   const integrations = manifest.integrations ?? {};
+  const ticketOperations = new Set(["ticket.view", "ticket.create", "ticket.edit", "ticket.comment", "ticket.change_status", "ticket.link", "ticket.log_time"]);
+  const forgeOperations = new Set(["pull_merge_request.view", "pull_merge_request.create", "pull_merge_request.edit", "pull_merge_request.comment", "pull_merge_request.request_review", "pull_merge_request.merge", "pipeline.view", "pipeline.job.view_log", "pipeline.trigger"]);
   const repos = manifest.repos ?? {};
   const repoPaths = new Set();
 
@@ -103,8 +105,8 @@ function assertReference(manifest) {
   assertAcyclic(repos, "repo");
 
   for (const [id, integration] of Object.entries(integrations)) {
-    const prefix = integration.kind === "ticketing" ? "ticket." : "code.";
-    for (const operation of integration.provides ?? []) assert(operation.startsWith(prefix), `integration ${id} provides an operation incompatible with its kind`);
+    const operations = integration.kind === "ticketing" ? ticketOperations : forgeOperations;
+    for (const operation of integration.provides ?? []) assert(operations.has(operation), `integration ${id} provides an operation incompatible with its kind`);
     for (const operation of integration.handles ?? []) assert(integration.provides?.includes(operation), `integration ${id} handles an unavailable operation`);
   }
 

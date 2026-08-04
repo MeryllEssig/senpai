@@ -5,6 +5,6 @@ description: Default read-only SenpAI forge workflow. Use after SenpAI has resol
 
 # Default code-hosting workflow
 
-This default workflow is intentionally read-only. Use it only after `senpai resolve operation code.read --repo <id>` selected an integration, then use `senpai-code-hosting` to inspect merge requests or pipelines.
+This default workflow is intentionally view-only. Use it only after `senpai resolve operation pull_merge_request.view --repo <id>`, `senpai resolve operation pipeline.view --repo <id>`, or `senpai resolve operation pipeline.job.view_log --repo <id>` selected an integration, then use `senpai-code-hosting` to inspect pull/merge requests, pipelines, or one bounded job log.
 
-Do not create or update merge requests, comment, request review, merge, or trigger pipelines. The default policy denies every write. If the user needs a write, explain that the project needs an explicit code-change workflow policy and instructions; service-level permissions do not create SenpAI permission.
+Do not create or edit pull/merge requests, comment, request review, merge, or trigger pipelines. The default policy denies every write operation. If the user needs one, explain that the project needs an explicit pull/merge request or pipeline workflow policy and instructions; service-level permissions do not create SenpAI permission.

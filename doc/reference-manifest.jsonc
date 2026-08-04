@@ -18,10 +18,10 @@
       "platform": "jira",
       "url": "https://acme.atlassian.net",
       "scope": { "project_key": "ACME" },
-      "provides": ["ticket.read", "ticket.comment", "ticket.transition"],
-      "handles": ["ticket.read", "ticket.comment"],
+      "provides": ["ticket.view", "ticket.comment", "ticket.change_status"],
+      "handles": ["ticket.view", "ticket.comment"],
       "routing": { "ticket_id_patterns": ["^ACME-[1-9][0-9]*$"], "priority": 10 },
-      "workflow": { "skill": "acme-ticket-workflow", "policy": { "read": "allow", "comment": "confirm" } }
+      "workflow": { "skill": "acme-ticket-workflow", "policy": { "ticket.view": "allow", "ticket.comment": "confirm" } }
     },
     "agency_redmine": {
       "kind": "ticketing",
@@ -29,19 +29,19 @@
       "url": "https://redmine.agency.example",
       "scope": { "project_identifier": "acme-build" },
       "auth": { "mode": "env", "api_key_env": "REDMINE_AGENCY_API_KEY" },
-      "provides": ["ticket.read", "ticket.log_time"],
+      "provides": ["ticket.view", "ticket.log_time"],
       "handles": ["ticket.log_time"],
       "routing": { "ticket_id_patterns": ["^#[1-9][0-9]*$"], "priority": 20 },
-      "workflow": { "policy": { "log_time": "confirm" } }
+      "workflow": { "policy": { "ticket.log_time": "confirm" } }
     },
     "agency_gitlab": {
       "kind": "forge",
       "platform": "gitlab",
       "url": "https://gitlab.agency.example",
       "auth": { "mode": "env", "token_env": "GITLAB_AGENCY_TOKEN" },
-      "provides": ["code.read", "code.create", "code.update", "code.comment", "code.request_review", "code.pipeline_read"],
-      "handles": ["code.read", "code.create", "code.update", "code.comment", "code.request_review", "code.pipeline_read"],
-      "workflow": { "skill": "acme-code-workflow", "policy": { "read": "allow", "create": "confirm", "update": "confirm", "comment": "confirm", "request_review": "confirm", "pipeline_read": "allow" } }
+      "provides": ["pull_merge_request.view", "pull_merge_request.create", "pull_merge_request.edit", "pull_merge_request.comment", "pull_merge_request.request_review", "pipeline.view", "pipeline.job.view_log"],
+      "handles": ["pull_merge_request.view", "pull_merge_request.create", "pull_merge_request.edit", "pull_merge_request.comment", "pull_merge_request.request_review", "pipeline.view", "pipeline.job.view_log"],
+      "workflow": { "skill": "acme-code-workflow", "policy": { "pull_merge_request.view": "allow", "pull_merge_request.create": "confirm", "pull_merge_request.edit": "confirm", "pull_merge_request.comment": "confirm", "pull_merge_request.request_review": "confirm", "pipeline.view": "allow", "pipeline.job.view_log": "allow" } }
     }
   },
   "repos": {

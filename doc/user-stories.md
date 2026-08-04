@@ -4,5 +4,6 @@
 - As a developer, I distinguish what an adapter can do (`provides`) from what my project routes to it (`handles`) and what it authorizes (`workflow.policy`).
 - As an agent, I resolve exactly one declared integration for a ticket or repository operation and stop on an unresolved ambiguity.
 - As a developer, I can mirror a repository on several forges and select the correct one per operation.
+- As an agent, I can find a failed pipeline for the current feature and read one selected job log without receiving an unbounded terminal stream.
 - As a user, I can migrate a V1 manifest as a reviewable draft without a silent write grant or secret exposure.
 - As a user, I can run only finite, declared capsules without shell execution.

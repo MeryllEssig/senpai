@@ -20,7 +20,8 @@ It is designed for Codex, Claude Code, Gemini CLI, OpenCode, and other agents th
 ```sh
 senpai resolve --json                          # Discover the project manifest
 senpai summary --json                          # Get the project at a glance
-senpai resolve operation code.read --repo app --json
+senpai resolve operation pull_merge_request.view --repo app --json
+senpai pipeline job-log --repo app --pipeline 123 --job 456 --json
 senpai run test --json                         # Run a reviewed, bounded operation
 ```
 
@@ -79,8 +80,8 @@ Create `.senpai.jsonc` at the root of a project:
       "kind": "forge",
       "platform": "gitlab",
       "url": "https://git.example",
-      "provides": ["code.read"],
-      "handles": ["code.read"]
+      "provides": ["pull_merge_request.view"],
+      "handles": ["pull_merge_request.view"]
     }
   },
   "repos": {
@@ -121,8 +122,9 @@ Start with the fully annotated [reference manifest](doc/reference-manifest.jsonc
 | `senpai resolve --json` | Discover the active manifest and its project root. |
 | `senpai summary --json` | Return a compact project overview. |
 | `senpai get repo --current --with-dependencies --json` | Get the current repository and its dependencies. |
-| `senpai resolve operation ticket.read --ticket ACME-42 --json` | Resolve the integration and workflow for a ticket operation. |
-| `senpai resolve operation code.read --repo app --json` | Resolve the integration and workflow for a forge operation. |
+| `senpai resolve operation ticket.view --ticket ACME-42 --json` | Resolve the integration and workflow for a ticket operation. |
+| `senpai resolve operation pull_merge_request.view --repo app --json` | Resolve the integration and workflow for a pull/merge request operation. |
+| `senpai pipeline job-log --repo app --pipeline 123 --job 456 --json` | Read the bounded final window of a selected GitHub or GitLab job log. |
 | `senpai list capsules --repo app --env preprod --json` | List operations available in a repository or environment. |
 | `senpai run <capsule> --json` | Run a declared capsule with bounded output. |
 | `senpai validate manifest --json` | Validate the shared manifest. |
@@ -178,7 +180,7 @@ A capsule is a deterministic, non-interactive argv command for finite operations
 | `senpai-project-use-ticket-workflow` | Apply the default read-only ticket workflow. |
 | `senpai-project-use-code-hosting-workflow` | Apply the default read-only forge workflow. |
 
-Ticket and code-change workflows combine explicit `allow`, `confirm`, and `deny` policies with project-specific instructions. If no workflow is declared, reads are allowed and writes are denied.
+Ticket, pull/merge request, and pipeline workflows combine explicit `allow`, `confirm`, and `deny` policies with project-specific instructions. If no workflow is declared, view operations, including `pipeline.job.view_log`, are allowed and write operations are denied.
 
 ## Documentation
 

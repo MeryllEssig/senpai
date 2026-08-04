@@ -8,8 +8,10 @@ Ticket patterns and priorities are optional routing hints. Multiple candidates a
 
 ## Repository galaxies
 
-A project may declare a galaxy of repositories in `repos`. Each repository has a project-relative `path`, optional `labels`, direct `depends_on` repository ids, and an `integrations` map from declared forge integrations to their platform repository paths. The dependency declarations keep multi-repository relationships available to the agent, while the integration map permits the same repository to be mirrored on several forges and routes each code operation only to a mapped integration. Validation rejects a dependency that names an unknown repository.
+A project may declare a galaxy of repositories in `repos`. Each repository has a project-relative `path`, optional `labels`, direct `depends_on` repository ids, and an `integrations` map from declared forge integrations to their platform repository paths. The dependency declarations keep multi-repository relationships available to the agent, while the integration map permits the same repository to be mirrored on several forges and routes each pull/merge request or pipeline operation only to a mapped integration. Validation rejects a dependency that names an unknown repository.
 
-An omitted local `read` policy is `allow`; all other omitted capabilities are `deny`. This is evaluated again for each workflow-initiated call. Auth is secret-safe metadata only: adapters receive environment-variable names and read values themselves.
+An omitted local view operation, including `pipeline.job.view_log`, has an `allow` policy; every other omitted operation has a `deny` policy. This is evaluated again for each workflow-initiated call. Auth is secret-safe metadata only: adapters receive environment-variable names and read values themselves.
+
+`senpai pipeline job-log` is the one native remote read surface. It supports the shipped GitHub and GitLab adapters only, requires a resolved `pipeline.job.view_log` route and policy, runs without a shell, stdin, or TTY, and retains only the final 10,000 lines and 1 MiB of log output.
 
 `senpai migrate v1` produces a non-writing proposal and review report. It flags role mappings, patterns/priorities, time fallbacks, mirrors, global workflow splits, and free-text rules; it does not invent cross-system links or write permissions.

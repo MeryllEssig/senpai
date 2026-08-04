@@ -306,43 +306,25 @@ pub fn validate(v: &Value) -> Result<(), SenpaiError> {
     }
     Ok(())
 }
-const TICKET_OPERATIONS: &[&str] = &[
-    "ticket.read",
+pub(crate) const TICKET_OPERATIONS: &[&str] = &[
+    "ticket.view",
     "ticket.create",
-    "ticket.update",
+    "ticket.edit",
     "ticket.comment",
-    "ticket.transition",
+    "ticket.change_status",
     "ticket.link",
     "ticket.log_time",
 ];
-const CODE_OPERATIONS: &[&str] = &[
-    "code.read",
-    "code.create",
-    "code.update",
-    "code.comment",
-    "code.request_review",
-    "code.merge",
-    "code.pipeline_read",
-    "code.pipeline_trigger",
-];
-const TICKET_POLICY: &[&str] = &[
-    "read",
-    "create",
-    "update",
-    "comment",
-    "transition",
-    "link",
-    "log_time",
-];
-const CODE_POLICY: &[&str] = &[
-    "read",
-    "create",
-    "update",
-    "comment",
-    "request_review",
-    "merge",
-    "pipeline_read",
-    "pipeline_trigger",
+pub(crate) const FORGE_OPERATIONS: &[&str] = &[
+    "pull_merge_request.view",
+    "pull_merge_request.create",
+    "pull_merge_request.edit",
+    "pull_merge_request.comment",
+    "pull_merge_request.request_review",
+    "pull_merge_request.merge",
+    "pipeline.view",
+    "pipeline.job.view_log",
+    "pipeline.trigger",
 ];
 
 fn validate_integrations(
@@ -351,10 +333,10 @@ fn validate_integrations(
 ) -> Result<(), SenpaiError> {
     for (id, integration) in integrations {
         let kind = integration["kind"].as_str().unwrap_or_default();
-        let (operations, policies) = if kind == "ticketing" {
-            (TICKET_OPERATIONS, TICKET_POLICY)
+        let operations = if kind == "ticketing" {
+            TICKET_OPERATIONS
         } else {
-            (CODE_OPERATIONS, CODE_POLICY)
+            FORGE_OPERATIONS
         };
         let provides = integration["provides"].as_array().unwrap();
         for operation in provides.iter().filter_map(Value::as_str) {
@@ -393,13 +375,13 @@ fn validate_integrations(
             .and_then(|workflow| workflow.get("policy"))
             .and_then(Value::as_object)
         {
-            for capability in policy.keys() {
-                if !policies.contains(&capability.as_str()) {
+            for operation in policy.keys() {
+                if !operations.contains(&operation.as_str()) {
                     return Err(SenpaiError::new(
                         4,
                         "invalid_manifest",
                         format!(
-                            "integrations.{id}.workflow.policy contains unsupported capability {capability}."
+                            "integrations.{id}.workflow.policy contains unsupported operation {operation}."
                         ),
                     ));
                 }
@@ -721,7 +703,7 @@ mod tests {
         json!({
             "version": 2,
             "project": {"name": "demo", "label": "Demo", "context": "Test", "stack": []},
-            "integrations": {"origin": {"kind": "forge", "platform": "gitlab", "url": "https://git.example", "provides": ["code.read"], "handles": ["code.read"]}},
+            "integrations": {"origin": {"kind": "forge", "platform": "gitlab", "url": "https://git.example", "provides": ["pull_merge_request.view"], "handles": ["pull_merge_request.view"]}},
             "repos": {"app": {"path": "."}},
             "environments": {"local": {"label": "Local", "repo": "app"}},
             "capsules": {

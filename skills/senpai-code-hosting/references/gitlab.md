@@ -1,14 +1,5 @@
 # GitLab adapter
 
-Use the official `glab` CLI. Target the declared GitLab host explicitly (for
-example with `--hostname` where supported or an isolated `glab auth login`
-entry for that host) and use the selected repo path from the manifest mapping.
-Do not rely on the current Git remote when several synchronized instances exist.
+Use the official `glab` CLI. Target the declared GitLab host explicitly (for example with `--hostname` where supported or an isolated `glab auth login` entry for that host) and use the selected repo path from the manifest mapping. Do not rely on the current Git remote when several synchronized instances exist.
 
-Useful common mappings: `glab mr view/list` (read), `glab mr create` (create),
-`glab mr update` (update), `glab mr note` (comment), `glab mr merge` (merge),
-and `glab pipeline list/view/run` (pipeline operations; command availability
-depends on installed glab version). Check `glab auth status` before mutation
-when appropriate. For env auth, run the documented host-scoped login flow only
-when the token can be consumed locally without appearing in the transcript;
-otherwise request user action. Interactive login must be completed by the user.
+Useful common mappings: `glab mr view/list` (`pull_merge_request.view`), `glab mr create` (`pull_merge_request.create`), `glab mr update` (`pull_merge_request.edit` and `pull_merge_request.request_review`), `glab mr note` (`pull_merge_request.comment`), `glab mr merge` (`pull_merge_request.merge`), and `glab pipeline list/view/run` (`pipeline.view` and `pipeline.trigger`; command availability depends on installed glab version). For `pipeline.job.view_log`, use `senpai pipeline job-log`; it invokes `glab ci trace <job-id>` for the declared repository and preserves a bounded final window. Check `glab auth status` before mutation when appropriate. For env auth, run the documented host-scoped login flow only when the token can be consumed locally without appearing in the transcript; otherwise request user action. Interactive login must be completed by the user.

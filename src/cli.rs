@@ -3,13 +3,13 @@ use serde_json::{Map, Value, json};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, VecDeque},
     fs,
     io::Read,
     path::PathBuf,
     process::{Command, Stdio},
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
@@ -78,51 +78,6 @@ fn map_with_id(id: &str, v: &Value, section: &str) -> Value {
 fn objects<'a>(v: &'a Value, key: &str) -> Option<&'a Map<String, Value>> {
     v.get(key)?.as_object()
 }
-fn role_select(
-    items: &Map<String, Value>,
-    role: &str,
-    explicit: Option<&str>,
-    kind: &str,
-) -> Result<(String, Value), SenpaiError> {
-    let candidates: Vec<_> = items
-        .iter()
-        .filter(|(_, v)| {
-            v.get("roles")
-                .and_then(Value::as_array)
-                .is_some_and(|rs| rs.iter().any(|x| x.as_str() == Some(role)))
-        })
-        .collect();
-    if let Some(x) = explicit {
-        let v = items
-            .get(x)
-            .ok_or_else(|| SenpaiError::new(3, "not_found", format!("Unknown {kind} {x}.")))?;
-        if !candidates.iter().any(|(i, _)| *i == x) {
-            return Err(SenpaiError::new(
-                3,
-                "capability_not_declared",
-                format!("{kind} {x} does not have role {role}."),
-            ));
-        }
-        return Ok((x.into(), v.clone()));
-    }
-    if candidates.len() == 1 {
-        return Ok((candidates[0].0.clone(), candidates[0].1.clone()));
-    }
-    if candidates.is_empty() {
-        return Err(SenpaiError::new(
-            3,
-            "capability_not_declared",
-            format!("No {kind} has role {role}."),
-        ));
-    }
-    let mut e = SenpaiError::new(
-        5,
-        "ambiguous_route",
-        format!("More than one {kind} has role {role}."),
-    );
-    e.details = candidates.iter().map(|(x, _)| json!({"id":x})).collect();
-    Err(e)
-}
 fn summary(l: &Loaded) -> Value {
     let v = &l.value;
     let integrations = objects(v, "integrations").map(|x| x.iter().map(|(id, integration)| {
@@ -138,50 +93,33 @@ fn summary(l: &Loaded) -> Value {
 }
 
 fn operation_kind(operation: &str) -> Option<&'static str> {
-    if operation.starts_with("ticket.") {
+    if TICKET_OPERATIONS.contains(&operation) {
         Some("ticketing")
-    } else if operation.starts_with("code.") {
+    } else if FORGE_OPERATIONS.contains(&operation) {
         Some("forge")
     } else {
         None
     }
 }
 fn expanded_policy(integration: &Value, operation: &str) -> Value {
-    let capabilities: &[&str] = if integration["kind"] == "ticketing" {
-        &[
-            "read",
-            "create",
-            "update",
-            "comment",
-            "transition",
-            "link",
-            "log_time",
-        ]
+    let operations = if integration["kind"] == "ticketing" {
+        TICKET_OPERATIONS
     } else {
-        &[
-            "read",
-            "create",
-            "update",
-            "comment",
-            "request_review",
-            "merge",
-            "pipeline_read",
-            "pipeline_trigger",
-        ]
+        FORGE_OPERATIONS
     };
     let policy = integration
         .get("workflow")
         .and_then(|workflow| workflow.get("policy"));
     let mut effective = Map::new();
-    for capability in capabilities {
+    for policy_operation in operations {
         effective.insert(
-            (*capability).into(),
+            (*policy_operation).into(),
             policy
-                .and_then(|policy| policy.get(*capability))
+                .and_then(|policy| policy.get(*policy_operation))
                 .cloned()
                 .unwrap_or_else(|| {
                     Value::String(
-                        if *capability == "read" {
+                        if is_view_operation(policy_operation) {
                             "allow"
                         } else {
                             "deny"
@@ -191,11 +129,10 @@ fn expanded_policy(integration: &Value, operation: &str) -> Value {
                 }),
         );
     }
-    let capability = operation
-        .split_once('.')
-        .map(|(_, value)| value)
-        .unwrap_or(operation);
-    json!({"effective": effective, "decision": effective[capability]})
+    json!({"effective": effective, "decision": effective[operation]})
+}
+fn is_view_operation(operation: &str) -> bool {
+    operation.ends_with(".view") || operation == "pipeline.job.view_log"
 }
 fn effective_workflow(integration: &Value) -> Value {
     integration
@@ -301,7 +238,7 @@ fn resolve_operation(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> 
         SenpaiError::new(
             2,
             "invalid_arguments",
-            "Operation must start with ticket. or code.",
+            "Operation must start with ticket., pull_merge_request., or pipeline.",
         )
     })?;
     let ticket = get_flag(args, "--ticket");
@@ -312,7 +249,7 @@ fn resolve_operation(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> 
         return Err(SenpaiError::new(
             2,
             "invalid_arguments",
-            "Ticket operations require exactly --ticket; code operations require exactly --repo.",
+            "Ticket operations require exactly --ticket; pull/merge request and pipeline operations require exactly --repo.",
         ));
     }
     let integrations = objects(&l.value, "integrations").unwrap();
@@ -376,6 +313,22 @@ fn resolve_operation(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> 
         json!({"integration":{"id":id,"kind":integration["kind"],"platform":integration["platform"],"url":integration["url"],"scope":integration.get("scope"),"auth":integration.get("auth")},"route":route,"operation":operation,"policy":expanded_policy(integration, operation),"workflow":{"skill":effective_workflow(integration)},"adapter":effective_adapter(&l.value, integration)}),
     )
 }
+fn migrate_v1_workflow(workflow: &Value, mappings: &[(&str, &str)]) -> Value {
+    let mut migrated = Map::new();
+    if let Some(skill) = workflow.get("skill") {
+        migrated.insert("skill".into(), skill.clone());
+    }
+    let mut policy = Map::new();
+    for (legacy, operation) in mappings {
+        if let Some(decision) = workflow.get("policy").and_then(|policy| policy.get(legacy)) {
+            policy.insert((*operation).into(), decision.clone());
+        }
+    }
+    if !policy.is_empty() {
+        migrated.insert("policy".into(), Value::Object(policy));
+    }
+    Value::Object(migrated)
+}
 fn migrate_v1() -> Result<Value, SenpaiError> {
     let path = find_manifest(&std::env::current_dir().unwrap())?;
     let input = parse_jsonc(&path, 4, "invalid_manifest")?;
@@ -418,11 +371,39 @@ fn migrate_v1() -> Result<Value, SenpaiError> {
     let ticket_workflow = input
         .get("workflows")
         .and_then(|workflows| workflows.get("tickets"))
-        .cloned();
+        .map(|workflow| {
+            migrate_v1_workflow(
+                workflow,
+                &[
+                    ("read", "ticket.view"),
+                    ("create", "ticket.create"),
+                    ("update", "ticket.edit"),
+                    ("comment", "ticket.comment"),
+                    ("transition", "ticket.change_status"),
+                    ("link", "ticket.link"),
+                    ("log_time", "ticket.log_time"),
+                ],
+            )
+        });
     let code_workflow = input
         .get("workflows")
         .and_then(|workflows| workflows.get("code_changes"))
-        .cloned();
+        .map(|workflow| {
+            migrate_v1_workflow(
+                workflow,
+                &[
+                    ("read", "pull_merge_request.view"),
+                    ("create", "pull_merge_request.create"),
+                    ("update", "pull_merge_request.edit"),
+                    ("comment", "pull_merge_request.comment"),
+                    ("request_review", "pull_merge_request.request_review"),
+                    ("merge", "pull_merge_request.merge"),
+                    ("pipeline_read", "pipeline.view"),
+                    ("pipeline_read", "pipeline.job.view_log"),
+                    ("pipeline_trigger", "pipeline.trigger"),
+                ],
+            )
+        });
     for (id, source) in objects(&input, "trackers")
         .and_then(|trackers| trackers.get("sources"))
         .and_then(Value::as_object)
@@ -434,8 +415,8 @@ fn migrate_v1() -> Result<Value, SenpaiError> {
         integration.insert("platform".into(), source["type"].clone());
         integration.insert("url".into(), source["url"].clone());
         integration.insert("scope".into(), json!({"project":source["project"]}));
-        integration.insert("provides".into(), json!(["ticket.read"]));
-        integration.insert("handles".into(), json!(["ticket.read"]));
+        integration.insert("provides".into(), json!(["ticket.view"]));
+        integration.insert("handles".into(), json!(["ticket.view"]));
         if let Some(auth) = safe_auth(source.get("auth"))? {
             integration.insert("auth".into(), auth);
         }
@@ -473,8 +454,8 @@ fn migrate_v1() -> Result<Value, SenpaiError> {
         integration.insert("kind".into(), Value::String("forge".into()));
         integration.insert("platform".into(), instance["platform"].clone());
         integration.insert("url".into(), instance["url"].clone());
-        integration.insert("provides".into(), json!(["code.read"]));
-        integration.insert("handles".into(), json!(["code.read"]));
+        integration.insert("provides".into(), json!(["pull_merge_request.view"]));
+        integration.insert("handles".into(), json!(["pull_merge_request.view"]));
         if let Some(auth) = safe_auth(instance.get("auth"))? {
             integration.insert("auth".into(), auth);
         }
@@ -523,55 +504,6 @@ fn migrate_v1() -> Result<Value, SenpaiError> {
     draft.insert("integrations".into(), Value::Object(integrations));
     Ok(json!({"draft":draft,"report":report,"written":false}))
 }
-fn workflow(v: &Value, domain: &str) -> Value {
-    let caps = if domain == "tickets" {
-        vec![
-            "read",
-            "create",
-            "update",
-            "comment",
-            "transition",
-            "link",
-            "log_time",
-        ]
-    } else {
-        vec![
-            "read",
-            "create",
-            "update",
-            "comment",
-            "request_review",
-            "merge",
-            "pipeline_read",
-            "pipeline_trigger",
-        ]
-    };
-    let d = v.get("workflows").and_then(|x| x.get(domain));
-    let skill = d
-        .and_then(|x| x.get("skill"))
-        .cloned()
-        .unwrap_or(Value::String(
-            if domain == "tickets" {
-                "senpai-project-use-ticket-workflow"
-            } else {
-                "senpai-project-use-code-hosting-workflow"
-            }
-            .into(),
-        ));
-    let mut p = Map::new();
-    for cap in caps {
-        p.insert(
-            cap.into(),
-            d.and_then(|x| x.get("policy"))
-                .and_then(|p| p.get(cap))
-                .cloned()
-                .unwrap_or(Value::String(
-                    if cap == "read" { "allow" } else { "deny" }.into(),
-                )),
-        );
-    }
-    json!({"domain":domain,"skill":skill,"policy":p})
-}
 fn get_command(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
     let v = &l.value;
     let topic = args
@@ -589,74 +521,6 @@ fn get_command(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
         ));
     }
     match topic {
-        "tracker" => {
-            let role = get_flag(args, "--role")
-                .ok_or_else(|| SenpaiError::new(2, "invalid_arguments", "--role is required."))?;
-            let x = objects(v, "trackers")
-                .and_then(|x| x.get("sources"))
-                .and_then(Value::as_object)
-                .ok_or_else(|| SenpaiError::new(3, "not_found", "No trackers declared."))?;
-            let (id, val) = role_select(
-                x,
-                &role,
-                get_flag(args, "--source").as_deref(),
-                "tracker source",
-            )?;
-            Ok(map_with_id(&id, &val, "trackers.sources"))
-        }
-        "ticket-route" => ticket_route(v, args),
-        "hosting" => {
-            let role = get_flag(args, "--role")
-                .ok_or_else(|| SenpaiError::new(2, "invalid_arguments", "--role is required."))?;
-            let repo = get_flag(args, "--repo")
-                .ok_or_else(|| SenpaiError::new(2, "invalid_arguments", "--repo is required."))?;
-            let r = objects(v, "repos")
-                .and_then(|x| x.get(&repo))
-                .ok_or_else(|| SenpaiError::new(3, "not_found", format!("Unknown repo {repo}.")))?;
-            let x = objects(v, "code_hosting")
-                .and_then(|x| x.get("instances"))
-                .and_then(Value::as_object)
-                .ok_or_else(|| SenpaiError::new(3, "not_found", "No code hosting declared."))?;
-            let (id, val) = role_select(
-                x,
-                &role,
-                get_flag(args, "--instance").as_deref(),
-                "hosting instance",
-            )?;
-            if !r
-                .get("hosting")
-                .and_then(Value::as_object)
-                .is_some_and(|h| h.contains_key(&id))
-            {
-                return Err(SenpaiError::new(
-                    3,
-                    "capability_not_declared",
-                    format!("Hosting instance {id} is not declared for repo {repo}."),
-                ));
-            }
-            let mut result = map_with_id(&id, &val, "code_hosting.instances");
-            result
-                .as_object_mut()
-                .unwrap()
-                .insert("repo".into(), Value::String(repo));
-            result
-                .as_object_mut()
-                .unwrap()
-                .insert("repository".into(), r["hosting"][&id].clone());
-            Ok(result)
-        }
-        "workflow" => {
-            let d = get_flag(args, "--domain")
-                .ok_or_else(|| SenpaiError::new(2, "invalid_arguments", "--domain is required."))?;
-            if d != "tickets" && d != "code_changes" {
-                return Err(SenpaiError::new(
-                    2,
-                    "invalid_arguments",
-                    "--domain must be tickets or code_changes.",
-                ));
-            }
-            Ok(workflow(v, &d))
-        }
         "repo" => repo_get(l, args),
         "environment" => one(
             v,
@@ -676,7 +540,6 @@ fn get_command(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
                 ))
             }
         }
-        "rules" => Ok(v.get("rules").cloned().unwrap_or(Value::Array(vec![]))),
         _ => Err(SenpaiError::new(
             2,
             "invalid_arguments",
@@ -690,67 +553,6 @@ fn one(v: &Value, section: &str, id: Option<&str>, label: &str) -> Result<Value,
         .and_then(|x| x.get(id))
         .ok_or_else(|| SenpaiError::new(3, "not_found", format!("Unknown {label} id {id}.")))?;
     Ok(map_with_id(id, x, section))
-}
-fn ticket_route(v: &Value, args: &[String]) -> Result<Value, SenpaiError> {
-    let id = get_flag(args, "--id")
-        .ok_or_else(|| SenpaiError::new(2, "invalid_arguments", "--id is required."))?;
-    let x = objects(v, "trackers")
-        .and_then(|x| x.get("sources"))
-        .and_then(Value::as_object)
-        .ok_or_else(|| SenpaiError::new(3, "not_found", "No trackers declared."))?;
-    if let Some(s) = get_flag(args, "--source") {
-        let a = x.get(&s).ok_or_else(|| {
-            SenpaiError::new(3, "not_found", format!("Unknown tracker source {s}."))
-        })?;
-        return Ok(map_with_id(&s, a, "trackers.sources"));
-    }
-    let mut candidates: Vec<(&String, &Value, i64)> = vec![];
-    for (sid, s) in x {
-        let matches = s
-            .get("ticket_id_patterns")
-            .and_then(Value::as_array)
-            .is_some_and(|ps| {
-                ps.iter().filter_map(Value::as_str).any(|p| {
-                    regex::Regex::new(p)
-                        .map(|r| r.is_match(&id))
-                        .unwrap_or(false)
-                })
-            });
-        if matches {
-            candidates.push((
-                sid,
-                s,
-                s.get("priority")
-                    .and_then(Value::as_i64)
-                    .unwrap_or(i64::MAX),
-            ));
-        }
-    }
-    if candidates.len() == 1 {
-        return Ok(map_with_id(
-            candidates[0].0,
-            candidates[0].1,
-            "trackers.sources",
-        ));
-    }
-    if candidates.is_empty() {
-        return Err(SenpaiError::new(
-            3,
-            "not_found",
-            format!("No tracker source matches ticket id {id}."),
-        ));
-    }
-    candidates.sort_by_key(|x| x.2);
-    if candidates.len() > 1 && candidates[0].2 == candidates[1].2 {
-        let mut e = SenpaiError::new(5, "ambiguous_route", "Ticket id matches multiple sources.");
-        e.details = candidates.iter().map(|x| json!({"id":x.0})).collect();
-        return Err(e);
-    }
-    Ok(map_with_id(
-        candidates[0].0,
-        candidates[0].1,
-        "trackers.sources",
-    ))
 }
 fn repo_get(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
     let rs = objects(&l.value, "repos")
@@ -1235,6 +1037,327 @@ fn capsule_error<'a>(
         vec![json!({"program":program,"args":args,"stdout":out,"stderr":err,"exit_code":exit})];
     Err(e)
 }
+
+const JOB_LOG_MAX_BYTES: usize = 1_048_576;
+const JOB_LOG_MAX_LINES: usize = 10_000;
+
+struct TailBuffer {
+    bytes: VecDeque<u8>,
+    limit_bytes: usize,
+    limit_lines: Option<usize>,
+    captured_bytes: usize,
+    captured_lines: usize,
+    retained_lines: usize,
+    truncated: bool,
+}
+
+impl TailBuffer {
+    fn new(limit_bytes: usize, limit_lines: Option<usize>) -> Self {
+        Self {
+            bytes: VecDeque::new(),
+            limit_bytes,
+            limit_lines,
+            captured_bytes: 0,
+            captured_lines: 0,
+            retained_lines: 0,
+            truncated: false,
+        }
+    }
+
+    fn push(&mut self, input: &[u8]) {
+        self.captured_bytes += input.len();
+        self.captured_lines += input.iter().filter(|byte| **byte == b'\n').count();
+        for byte in input {
+            self.bytes.push_back(*byte);
+            if *byte == b'\n' {
+                self.retained_lines += 1;
+            }
+        }
+        self.trim();
+    }
+
+    fn trim(&mut self) {
+        while self
+            .limit_lines
+            .is_some_and(|limit| self.retained_lines > limit)
+            || self.bytes.len() > self.limit_bytes
+        {
+            if self.bytes.pop_front() == Some(b'\n') {
+                self.retained_lines -= 1;
+            }
+            self.truncated = true;
+        }
+    }
+
+    fn text(&self) -> String {
+        let marker = b"[... log truncated; showing the final bounded window ...]\n";
+        let start = if self.truncated {
+            self.bytes
+                .len()
+                .saturating_sub(self.limit_bytes - marker.len())
+        } else {
+            0
+        };
+        let bytes: Vec<_> = self.bytes.iter().skip(start).copied().collect();
+        let text = String::from_utf8_lossy(&bytes);
+        if self.truncated {
+            format!("{}{}", String::from_utf8_lossy(marker), text)
+        } else {
+            text.into_owned()
+        }
+    }
+}
+
+fn capture_tail<R: Read + Send + 'static>(
+    mut reader: R,
+    output: Arc<Mutex<TailBuffer>>,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let mut buffer = [0; 8192];
+        while let Ok(read) = reader.read(&mut buffer) {
+            if read == 0 {
+                break;
+            }
+            output.lock().unwrap().push(&buffer[..read]);
+        }
+    })
+}
+
+fn url_host(value: &str) -> Option<&str> {
+    value
+        .split_once("://")
+        .map(|(_, rest)| rest.split('/').next().unwrap_or_default())
+        .filter(|host| !host.is_empty())
+}
+
+fn numeric_id(value: &str, label: &str) -> Result<String, SenpaiError> {
+    if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
+        Ok(value.into())
+    } else {
+        Err(SenpaiError::new(
+            2,
+            "invalid_arguments",
+            format!("{label} must be a numeric id or a supported job URL."),
+        ))
+    }
+}
+
+fn parse_job_target(
+    platform: &str,
+    declared_host: &str,
+    declared_repository: &str,
+    job: &str,
+    pipeline: Option<String>,
+) -> Result<(Option<String>, String), SenpaiError> {
+    if !job.starts_with("http://") && !job.starts_with("https://") {
+        return Ok((pipeline, numeric_id(job, "--job")?));
+    }
+    if url_host(job) != Some(declared_host) {
+        return Err(SenpaiError::new(
+            2,
+            "invalid_arguments",
+            "Job URL host does not match the resolved integration.",
+        ));
+    }
+    let segments: Vec<_> = job
+        .split_once("://")
+        .map(|(_, path)| path.split('/').collect())
+        .unwrap_or_default();
+    match platform {
+        "github" => {
+            let runs = segments
+                .windows(2)
+                .position(|parts| parts == ["actions", "runs"])
+                .ok_or_else(|| {
+                    SenpaiError::new(2, "invalid_arguments", "Unsupported GitHub job URL.")
+                })?;
+            let jobs_index = runs + 3;
+            let job_index = jobs_index + 1;
+            if segments.get(jobs_index) != Some(&"jobs") {
+                return Err(SenpaiError::new(
+                    2,
+                    "invalid_arguments",
+                    "Unsupported GitHub job URL.",
+                ));
+            }
+            if segments[1..runs].join("/") != declared_repository {
+                return Err(SenpaiError::new(
+                    2,
+                    "invalid_arguments",
+                    "Job URL repository does not match the resolved route.",
+                ));
+            }
+            Ok((
+                Some(numeric_id(segments[runs + 2], "pipeline")?),
+                numeric_id(segments[job_index], "job")?,
+            ))
+        }
+        "gitlab" => {
+            let marker = segments
+                .windows(2)
+                .position(|parts| parts == ["-", "jobs"])
+                .ok_or_else(|| {
+                    SenpaiError::new(2, "invalid_arguments", "Unsupported GitLab job URL.")
+                })?;
+            if segments[1..marker].join("/") != declared_repository {
+                return Err(SenpaiError::new(
+                    2,
+                    "invalid_arguments",
+                    "Job URL repository does not match the resolved route.",
+                ));
+            }
+            Ok((
+                pipeline,
+                numeric_id(segments.get(marker + 2).copied().unwrap_or_default(), "job")?,
+            ))
+        }
+        _ => Err(SenpaiError::new(
+            7,
+            "unsupported_adapter",
+            "Native job-log reading supports GitHub and GitLab only.",
+        )),
+    }
+}
+
+fn pipeline_job_log(l: &Loaded, args: &[String]) -> Result<Value, SenpaiError> {
+    let repo = get_flag(args, "--repo").ok_or_else(|| {
+        SenpaiError::new(2, "invalid_arguments", "pipeline job-log requires --repo.")
+    })?;
+    let job = get_flag(args, "--job").ok_or_else(|| {
+        SenpaiError::new(2, "invalid_arguments", "pipeline job-log requires --job.")
+    })?;
+    let requested_pipeline = get_flag(args, "--pipeline");
+    let mut resolve_args = vec![
+        "resolve".into(),
+        "operation".into(),
+        "pipeline.job.view_log".into(),
+        "--repo".into(),
+        repo.clone(),
+    ];
+    if let Some(integration) = get_flag(args, "--integration") {
+        resolve_args.extend(["--integration".into(), integration]);
+    }
+    let resolved = resolve_operation(l, &resolve_args)?;
+    let decision = resolved["policy"]["decision"].as_str().unwrap_or("deny");
+    if decision == "deny" {
+        return Err(SenpaiError::new(
+            5,
+            "policy_denied",
+            "The resolved policy denies pipeline.job.view_log.",
+        ));
+    }
+    if decision == "confirm" && !has(args, "--confirm") {
+        return Err(SenpaiError::new(
+            5,
+            "confirmation_required",
+            "pipeline.job.view_log requires explicit confirmation; rerun with --confirm after confirmation.",
+        ));
+    }
+    let platform = resolved["integration"]["platform"]
+        .as_str()
+        .unwrap_or_default();
+    let host =
+        url_host(resolved["integration"]["url"].as_str().unwrap_or_default()).ok_or_else(|| {
+            SenpaiError::new(
+                4,
+                "invalid_manifest",
+                "Forge integration URL must include a host.",
+            )
+        })?;
+    let repository = resolved["route"]["repository"].as_str().unwrap_or_default();
+    let (pipeline, job) = parse_job_target(platform, host, repository, &job, requested_pipeline)?;
+    if platform == "github" && pipeline.is_none() {
+        return Err(SenpaiError::new(
+            2,
+            "invalid_arguments",
+            "GitHub job logs require --pipeline when --job is an id.",
+        ));
+    }
+    let (program, command_args): (&str, Vec<String>) = match platform {
+        "github" => (
+            "gh",
+            vec![
+                "run".into(),
+                "view".into(),
+                pipeline.clone().unwrap(),
+                "--log".into(),
+                "--job".into(),
+                job.clone(),
+                "--repo".into(),
+                format!("{host}/{repository}"),
+            ],
+        ),
+        "gitlab" => {
+            let mut command = vec!["ci".into(), "trace".into(), job.clone()];
+            if let Some(pipeline) = pipeline.clone() {
+                command.extend(["--pipeline-id".into(), pipeline]);
+            }
+            command.extend(["--repo".into(), format!("https://{host}/{repository}")]);
+            ("glab", command)
+        }
+        _ => {
+            return Err(SenpaiError::new(
+                7,
+                "unsupported_adapter",
+                "Native job-log reading supports GitHub and GitLab only.",
+            ));
+        }
+    };
+    let mut command = Command::new(program);
+    command
+        .args(&command_args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command.spawn().map_err(|error| {
+        SenpaiError::new(
+            7,
+            "job_log_failed",
+            format!("Could not start {program}: {error}"),
+        )
+    })?;
+    let output = Arc::new(Mutex::new(TailBuffer::new(
+        JOB_LOG_MAX_BYTES,
+        Some(JOB_LOG_MAX_LINES),
+    )));
+    let diagnostics = Arc::new(Mutex::new(TailBuffer::new(65_536, None)));
+    let stdout = capture_tail(child.stdout.take().unwrap(), Arc::clone(&output));
+    let stderr = capture_tail(child.stderr.take().unwrap(), Arc::clone(&diagnostics));
+    let start = Instant::now();
+    let status = loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| SenpaiError::new(7, "job_log_failed", error.to_string()))?
+        {
+            break status;
+        }
+        if start.elapsed() > Duration::from_secs(30) {
+            kill_capsule(&mut child);
+            stdout.join().ok();
+            stderr.join().ok();
+            return Err(SenpaiError::new(
+                7,
+                "job_log_failed",
+                "Job log command timed out.",
+            ));
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+    stdout.join().ok();
+    stderr.join().ok();
+    let output = output.lock().unwrap();
+    let diagnostics = diagnostics.lock().unwrap();
+    let result = json!({"operation":"pipeline.job.view_log", "repo":repo, "pipeline":pipeline, "job":job, "log":output.text(), "truncated":output.truncated, "captured_bytes":output.captured_bytes, "captured_lines":output.captured_lines, "stderr":diagnostics.text(), "stderr_truncated":diagnostics.truncated, "exit_code":status.code()});
+    if !status.success() {
+        let mut error = SenpaiError::new(7, "job_log_failed", "Job log command failed.");
+        error.details = vec![result];
+        return Err(error);
+    }
+    Ok(result)
+}
+
 pub fn run(args: Vec<String>) -> i32 {
     let json_mode = has(&args, "--json");
     let result = (|| -> Result<Value, SenpaiError> {
@@ -1301,6 +1424,13 @@ pub fn run(args: Vec<String>) -> i32 {
             "doctor" => {
                 validate_local(&l)?;
                 Ok(json!({"valid":true}))
+            }
+            "pipeline"
+                if args
+                    .get(1)
+                    .is_some_and(|subcommand| subcommand == "job-log") =>
+            {
+                pipeline_job_log(&l, &args)
             }
             "run" => run_capsule(&l, &args),
             _ => Err(SenpaiError::new(

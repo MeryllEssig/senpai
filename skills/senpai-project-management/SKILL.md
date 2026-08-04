@@ -5,7 +5,7 @@ description: Perform common SenpAI ticket operations after a v2 integration reso
 
 # Project management interface
 
-Use this skill only after `senpai resolve operation ticket.*` selected one ticketing integration. The common operations are `read`, `create`, `update`, `comment`, `transition`, `link`, and `log_time`; search is part of `read`. Before every operation, use the selected id, URL, scope, and auth metadata. The returned adapter is the complete technical adapter selection.
+Use this skill only after `senpai resolve operation ticket.*` selected one ticketing integration. The common operations are `ticket.view`, `ticket.create`, `ticket.edit`, `ticket.comment`, `ticket.change_status`, `ticket.link`, and `ticket.log_time`; search is part of `ticket.view`. Before every operation, use the selected id, URL, scope, and auth metadata. The returned adapter is the complete technical adapter selection.
 
 Enforce the resolution's local policy before every adapter call. Proceed only for `allow`; obtain explicit confirmation for the concrete operation under `confirm`; never attempt `deny`. Then load the configured workflow skill; it may narrow permissions but cannot widen them or select another integration.
 
@@ -21,10 +21,10 @@ Redmine uses outbound HTTPS. Request any environment-level network approval befo
 
 ## Redmine commands
 
-Use the documented command below for a routed read. Run `python3 <skill-dir>/scripts/redmine.py --help` only when the requested operation or its arguments are not covered by this skill or its Redmine reference. Supply the source URL, declared project identifier where the operation needs it, and the API-key environment-variable name. The script emits bounded JSON and does not print credentials. For example, a routed read is conceptually:
+Use the documented command below for a routed `ticket.view`. Run `python3 <skill-dir>/scripts/redmine.py --help` only when the requested operation or its arguments are not covered by this skill or its Redmine reference. Supply the source URL, declared project identifier where the operation needs it, and the API-key environment-variable name. The script emits bounded JSON and does not print credentials. For example:
 
 ```text
 python3 scripts/redmine.py get-issue --url <url> --api-key-env <name> --id <ticket-id>
 ```
 
-Use server-returned ids for comments, status updates, time entries, and links. Redmine transition is `update-issue --status-id`; linking is `add-relation`. Do not guess status IDs: list issue statuses first. The script does not know SenpAI policy and cannot substitute for it.
+Use server-returned ids for comments, status updates, time entries, and links. Redmine status changes use `update-issue --status-id`; linking uses `add-relation`. Do not guess status IDs: list issue statuses first. The script does not know SenpAI policy and cannot substitute for it.
