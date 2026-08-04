@@ -171,7 +171,7 @@ A capsule is a deterministic, non-interactive argv command for finite operations
 
 | Skill | Purpose |
 |:---|:---|
-| `senpai-use-project-context` | Resolve a manifest and retrieve only the needed context. |
+| `senpai-use-project-context` | Resolve a manifest and retrieve only the needed context, including the ticket referenced by the current branch. |
 | `senpai-setup-project-context` | Interview, create, and validate a new manifest. |
 | `senpai-manage-project-context` | Safely evolve an existing manifest. |
 | `senpai-discover-project-automation` | Propose safe automation opportunities without applying them. |
@@ -181,6 +181,8 @@ A capsule is a deterministic, non-interactive argv command for finite operations
 | `senpai-project-use-code-hosting-workflow` | Apply the default read-only forge workflow. |
 
 Ticket, pull/merge request, and pipeline workflows combine explicit `allow`, `confirm`, and `deny` policies with project-specific instructions. If no workflow is declared, view operations, including `pipeline.job.view_log`, are allowed and write operations are denied.
+
+When a request asks for the ticket of the current branch before a review or implementation task, use `senpai-use-project-context` first. It resolves an explicit ticket reference in the checked-out branch through `ticket.view`, retrieves the routed ticket context, and only then proceeds with the follow-on work. It reports an actual routing, policy, authentication, network, or adapter failure rather than treating Git history as a substitute for ticket access.
 
 ## Documentation
 

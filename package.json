@@ -6,8 +6,9 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "verify": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-targets --all-features && node scripts/verify-reference.mjs && bash tests/installer.test.sh && bash tests/cli.test.sh && bash tests/package-release.test.sh && bash tests/workflow-triggers.test.sh",
+    "verify": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-targets --all-features && node scripts/verify-reference.mjs && bash tests/skills.test.sh && bash tests/installer.test.sh && bash tests/cli.test.sh && bash tests/package-release.test.sh && bash tests/workflow-triggers.test.sh",
     "test:installer": "bash tests/installer.test.sh",
+    "test:skills": "bash tests/skills.test.sh",
     "test:cli": "bash tests/cli.test.sh",
     "test:package-release": "bash tests/package-release.test.sh"
   },
