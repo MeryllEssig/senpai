@@ -21,6 +21,7 @@ Each project carries a single manifest file, `.senpai.jsonc`, that declares inte
 
 - Always conventional commit.
 - If you install/update the project when in development, always try to install from the remote (github) by default.
+- Before creating a release tag, align the tag exactly with the `version` in `Cargo.toml` (and the root `senpai` package entry in `Cargo.lock`), update the version assertion in `tests/cli.test.sh`, and verify the remotely installed binary reports that same version with `senpai --version`.
 - Always keep documentation up-to-date.
 - Do not wrap prose in documentation at a fixed column; use one line per paragraph or list item.
 - Always fix bugs you see, even if you aren't responsible for the bug.
