@@ -17,6 +17,8 @@ for workflow in .github/workflows/ci.yml .github/workflows/release.yml; do
   assert_contains "$workflow" "          node-version: 24"
 done
 
+assert_contains .github/workflows/ci.yml '  workflow_dispatch:'
+
 if grep -Fqx '  pull_request:' .github/workflows/ci.yml; then
   printf 'CI must run only for numeric release tags\n' >&2
   exit 1
