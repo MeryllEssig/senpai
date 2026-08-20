@@ -1,6 +1,6 @@
 [package]
 name = "senpai"
-version = "1.0.6"
+version = "1.0.7"
 edition = "2024"
 description = "Project-scoped declarative context for coding agents"
 

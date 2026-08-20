@@ -4,7 +4,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 binary="$root/target/debug/senpai"
 cargo build --quiet --manifest-path "$root/Cargo.toml"
-"$binary" --version --json | grep -q '1.0.6'
+"$binary" --version --json | grep -q '1.0.7'
 workspace=$(mktemp -d)
 child_pid=""
 trap 'result_code=$?; if [[ -n $child_pid ]]; then kill "$child_pid" 2>/dev/null || true; fi; rm -rf "$workspace"; exit "$result_code"' EXIT
