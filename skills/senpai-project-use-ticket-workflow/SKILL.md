@@ -1,10 +1,14 @@
 ---
 name: senpai-project-use-ticket-workflow
-description: Default read-only SenpAI ticket workflow. Use after SenpAI has resolved a ticketing integration and checked its effective local policy when the project declares no custom workflow.
+description: Default policy-respecting SenpAI ticket workflow. Use after SenpAI has resolved a ticketing integration and checked its effective local policy when the project declares no custom workflow skill.
 ---
 
 # Default ticket workflow
 
-This default workflow is intentionally view-only. Use it only after `senpai resolve operation ticket.view --ticket <id>` selected an integration. View ticket details and permitted metadata through `senpai-project-management`, then report the integration and ticket id clearly.
+Apply the requested operation's resolved local policy decision.
 
-Do not create, edit, comment, change status, link, or log time. The default policy denies every ticket write operation. If the user needs one, explain that the project must declare an explicit ticket workflow policy and instructions; do not infer permission from the target service account.
+- `allow` — proceed only with the requested operation.
+- `confirm` — obtain explicit confirmation for the concrete operation and target before proceeding.
+- `deny` — do not perform the operation.
+
+Use `senpai-project-management` after resolution to apply the selected adapter guidance. Do not broaden the requested action or bypass the selected integration, adapter, authentication, or safety checks.

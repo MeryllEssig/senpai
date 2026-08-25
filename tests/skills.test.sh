@@ -5,9 +5,12 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 assert_contains() { grep -Fq -- "$2" "$1" || fail "expected $2 in $1"; }
+assert_not_contains() { ! grep -Fq -- "$2" "$1" || fail "did not expect $2 in $1"; }
 
 context_skill="$root/skills/senpai-use-project-context/SKILL.md"
 gitlab_skill="$root/skills/senpai-code-hosting/references/gitlab.md"
+ticket_workflow="$root/skills/senpai-project-use-ticket-workflow/SKILL.md"
+forge_workflow="$root/skills/senpai-project-use-code-hosting-workflow/SKILL.md"
 
 # This is a delivery contract: branch-scoped ticket requests must resolve
 # through SenpAI before any Git-context fallback or auth conclusion.
@@ -28,5 +31,18 @@ assert_contains "$gitlab_skill" '`glab mr create` derives the MR source project 
 assert_contains "$gitlab_skill" 'pass the resolved `--repo <route.repository>` and declared host explicitly'
 assert_contains "$gitlab_skill" 'verify that none was added or changed afterwards'
 assert_contains "$gitlab_skill" 'Never pass a different project as its target'
+
+# Default workflows apply the resolved policy. An omitted policy already has
+# safe CLI defaults, so the fallback workflow must not turn declared writes
+# into an unconditional denial.
+for workflow in "$ticket_workflow" "$forge_workflow"; do
+  assert_contains "$workflow" "Apply the requested operation's resolved local policy decision."
+  assert_contains "$workflow" '`allow` — proceed only with the requested operation.'
+  assert_contains "$workflow" '`confirm` — obtain explicit confirmation for the concrete operation and target before proceeding.'
+  assert_contains "$workflow" '`deny` — do not perform the operation.'
+  assert_contains "$workflow" 'Do not broaden the requested action or bypass the selected integration, adapter, authentication, or safety checks.'
+  assert_not_contains "$workflow" 'intentionally view-only'
+  assert_not_contains "$workflow" 'The default policy denies every write operation.'
+done
 
 printf 'skill tests passed\n'

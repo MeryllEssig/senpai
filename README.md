@@ -177,10 +177,10 @@ A capsule is a deterministic, non-interactive argv command for finite operations
 | `senpai-discover-project-automation` | Propose safe automation opportunities without applying them. |
 | `senpai-project-management` | Work with ticketing platforms through focused adapters. |
 | `senpai-code-hosting` | Work with code-hosting platforms through focused adapters. |
-| `senpai-project-use-ticket-workflow` | Apply the default read-only ticket workflow. |
-| `senpai-project-use-code-hosting-workflow` | Apply the default read-only forge workflow. |
+| `senpai-project-use-ticket-workflow` | Apply the default policy-respecting ticket workflow. |
+| `senpai-project-use-code-hosting-workflow` | Apply the default policy-respecting forge workflow. |
 
-Ticket, pull/merge request, and pipeline workflows combine explicit `allow`, `confirm`, and `deny` policies with project-specific instructions. If no workflow is declared, view operations, including `pipeline.job.view_log`, are allowed and write operations are denied.
+Ticket, pull/merge request, and pipeline workflows combine explicit `allow`, `confirm`, and `deny` policies with project-specific instructions. The default workflows apply the resolved decision: `allow` proceeds only with the requested operation, `confirm` requires explicit confirmation for the concrete operation and target, and `deny` stops. If no policy is declared, view operations, including `pipeline.job.view_log`, are allowed and write operations are denied.
 
 When a request asks for the ticket of the current branch before a review or implementation task, use `senpai-use-project-context` first. It resolves an explicit ticket reference in the checked-out branch through `ticket.view`, retrieves the routed ticket context, and only then proceeds with the follow-on work. It reports an actual routing, policy, authentication, network, or adapter failure rather than treating Git history as a substitute for ticket access.
 
