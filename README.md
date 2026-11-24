@@ -203,12 +203,13 @@ bun install
 bun run verify
 ```
 
-`bun run verify` validates the reference JSONC files, runs installer and CLI contract tests, checks Rust formatting, runs Clippy with warnings denied, and runs the Rust test suite.
+`bun run verify` validates the reference JSONC files, runs installer and CLI contract tests, checks Rust formatting, runs Clippy with warnings denied, runs the Rust test suite, and runs the Redmine adapter tests.
 
 Useful focused checks:
 
 ```sh
 bun run test:installer
 bun run test:cli
+bun run test:redmine
 cargo test
 ```
