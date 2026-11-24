@@ -27,4 +27,4 @@ Use the documented command below for a routed `ticket.view`. Run `python3 <skill
 python3 scripts/redmine.py get-issue --url <url> --api-key-env <name> --id <ticket-id>
 ```
 
-Use server-returned ids for comments, status updates, time entries, and links. Redmine status changes use `update-issue --status-id`; linking uses `add-relation`. Do not guess status IDs: list issue statuses first. The script does not know SenpAI policy and cannot substitute for it.
+Use server-returned ids for comments, status updates, time entries, and links. Redmine status changes use `update-issue --status-id`; linking uses `add-relation`. Do not guess status IDs: list issue statuses first. Pass `--private` to `add-comment` (or to `update-issue` together with `--notes`) only when the user explicitly asks for a private note; never default to it or infer it. If the command reports that the note is not private, or that its privacy could not be verified, the note is already posted: tell the user immediately (publicly published, or state unknown), never retry the command, and let them check the ticket in Redmine. The script does not know SenpAI policy and cannot substitute for it.

@@ -192,6 +192,26 @@ def read_issue_with_attachments(issue_id: str, client: Redmine, attachment_direc
     return result
 
 
+def normalize_note(text: str) -> str:
+    return text.replace("\r\n", "\n").strip()
+
+
+def verify_private_note(client: Redmine, issue_id: str, notes: str) -> None:
+    """Redmine silently ignores private_notes without the 'set notes private' permission: check the outcome."""
+    try:
+        result = client.request("GET", f"/issues/{urllib.parse.quote(issue_id, safe='')}.json?include=journals")
+    except AdapterError as exc:
+        raise AdapterError(f"note was posted but its privacy could not be verified: {exc}") from exc
+    issue = result.get("issue") if isinstance(result, dict) else None
+    journals = issue.get("journals") if isinstance(issue, dict) else None
+    with_notes = [(j.get("id") if isinstance(j.get("id"), int) else 0, index, j) for index, j in enumerate(journals or []) if isinstance(j, dict) and j.get("notes")]
+    latest = max(with_notes, key=lambda entry: entry[:2])[2] if with_notes else None
+    if latest is None or normalize_note(str(latest["notes"])) != normalize_note(notes):
+        raise AdapterError("note was posted but its privacy could not be verified: the posted note was not found as the latest note")
+    if latest.get("private_notes") is not True:
+        raise AdapterError("note was posted but is not private (missing 'set notes private' permission?)")
+
+
 def query(params: dict[str, Any]) -> str:
     return "?" + urllib.parse.urlencode({k: v for k, v in params.items() if v is not None}) if params else ""
 
@@ -212,8 +232,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = command("list-issues"); p.add_argument("--project"); p.add_argument("--status-id"); p.add_argument("--assigned-to-id"); p.add_argument("--limit", type=lambda x: min(positive_int(x), 100), default=25); p.add_argument("--all", action="store_true")
     p = command("list-statuses")
     p = command("create-issue"); p.add_argument("--project", required=True); p.add_argument("--tracker-id", required=True, type=positive_int); p.add_argument("--subject", required=True); p.add_argument("--description"); p.add_argument("--priority-id", type=positive_int); p.add_argument("--assigned-to-id", type=positive_int); p.add_argument("--custom-fields-json", type=parse_json_object)
-    p = command("update-issue"); p.add_argument("--id", required=True); p.add_argument("--subject"); p.add_argument("--description"); p.add_argument("--status-id", type=positive_int); p.add_argument("--priority-id", type=positive_int); p.add_argument("--assigned-to-id", type=positive_int); p.add_argument("--notes"); p.add_argument("--custom-fields-json", type=parse_json_object)
-    p = command("add-comment"); p.add_argument("--id", required=True); p.add_argument("--notes", required=True)
+    p = command("update-issue"); p.add_argument("--id", required=True); p.add_argument("--subject"); p.add_argument("--description"); p.add_argument("--status-id", type=positive_int); p.add_argument("--priority-id", type=positive_int); p.add_argument("--assigned-to-id", type=positive_int); p.add_argument("--notes"); p.add_argument("--private", action="store_true", help="make --notes a private note"); p.add_argument("--custom-fields-json", type=parse_json_object)
+    p = command("add-comment"); p.add_argument("--id", required=True); p.add_argument("--notes", required=True); p.add_argument("--private", action="store_true", help="post the note as a private note")
     p = command("log-time"); p.add_argument("--id", required=True); p.add_argument("--hours", required=True, type=positive_float); p.add_argument("--activity-id", required=True, type=positive_int); p.add_argument("--comments")
     p = command("add-relation"); p.add_argument("--id", required=True); p.add_argument("--issue-to-id", required=True); p.add_argument("--relation-type", required=True)
     return parser
@@ -233,6 +253,7 @@ def run(args: argparse.Namespace, client: Redmine) -> Any:
         if args.custom_fields_json is not None: issue["custom_fields"] = args.custom_fields_json
         return client.request("POST", "/issues.json", {"issue": issue})
     if args.operation in {"update-issue", "add-comment"}:
+        if args.private and not args.notes: raise AdapterError("--private requires non-empty --notes")
         issue: dict[str, Any] = {"notes": args.notes} if args.operation == "add-comment" else {}
         if args.operation == "update-issue":
             for key in ("subject", "description", "status_id", "priority_id", "assigned_to_id", "notes"):
@@ -240,7 +261,11 @@ def run(args: argparse.Namespace, client: Redmine) -> Any:
                 if value is not None: issue[key] = value
             if args.custom_fields_json is not None: issue["custom_fields"] = args.custom_fields_json
             if not issue: raise AdapterError("update-issue needs at least one field")
-        return client.request("PUT", f"/issues/{urllib.parse.quote(args.id, safe='')}.json", {"issue": issue})
+        if args.private: issue["private_notes"] = True
+        result = client.request("PUT", f"/issues/{urllib.parse.quote(args.id, safe='')}.json", {"issue": issue})
+        if not args.private: return result
+        verify_private_note(client, args.id, args.notes)
+        return {"ok": True, "private_notes": True}
     if args.operation == "log-time":
         entry = {"issue_id": args.id, "hours": args.hours, "activity_id": args.activity_id}
         if args.comments is not None: entry["comments"] = args.comments
